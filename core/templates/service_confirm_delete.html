@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Confirmar Borrado{% endblock %}
+
+{% block content %}
+<h2>¿Estás seguro?</h2>
+<p>Estás a punto de borrar el servicio: <strong>"{{ object.name }}"</strong>.</p>
+<p>Esta acción no se puede deshacer.</p>
+<form method="post">
+  {% csrf_token %}
+  <button type="submit" class="btn btn-danger">Sí, borrar</button>
+  <a href="{% url 'service_list' %}" class="btn btn-secondary">Cancelar</a>
+</form>
+{% endblock %}

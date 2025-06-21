@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Mis Servicios{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2>Mis Servicios</h2>
+  <a href="{% url 'service_create' %}" class="btn btn-primary">Añadir Nuevo Servicio</a>
+</div>
+
+<ul class="list-group">
+  {% for service in services %}
+  <li class="list-group-item d-flex justify-content-between align-items-center">
+    <div>
+      <strong>{{ service.name }}</strong> - ${{ service.price }} ({{ service.duration_minutes }} min)
+    </div>
+    <div>
+      <a href="{% url 'service_update' service.pk %}" class="btn btn-secondary btn-sm">Editar</a>
+      <a href="{% url 'service_delete' service.pk %}" class="btn btn-danger btn-sm">Borrar</a>
+    </div>
+  </li>
+  {% empty %}
+  <li class="list-group-item">Aún no has añadido ningún servicio.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

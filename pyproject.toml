@@ -1,0 +1,17 @@
+[project]
+name = "stilo"
+version = "0.1.4"
+description = "Plataforma web para conectar clientes con peluquerías, permitiendo la gestión de servicios y la reserva de turnos online."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dj-database-url>=3.0.0",
+    "django>=5.2.3",
+    "pillow>=11.2.1",
+    "python-decouple>=3.8",
+    "requests>=2.32.4",
+]
+[dependency-groups]
+dev = [
+    "faker>=37.4.0",
+]
