@@ -76,7 +76,7 @@ WSGI_APPLICATION = "stilo.wsgi.application"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 default_db_url = "sqlite:///" + str(BASE_DIR / "db.sqlite3")
-DATABASES = {"default": dj_database_url.config(default=default_db_url)}
+DATABASES = {"default": dj_database_url.parse(config("DATABASE_URL", default=default_db_url))}  # type: ignore
 
 
 # Password validation
