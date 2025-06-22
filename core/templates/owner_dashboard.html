@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Mi Dashboard{% endblock %}
+
+{% block content %}
+<h2>Estadísticas de {{ user.hairdresser_profile.name }}</h2>
+<!-- Tarjetas de resumen -->
+<h3>Resumen de {% now "F" %}</h3>
+<div class="row my-4">
+  <div class="col-md-4">
+    <div class="card text-white bg-success mb-3">
+      <div class="card-header">Ingresos</div>
+      <div class="card-body">
+        <h5 class="card-title">${{ monthly_revenue|floatformat:2 }}</h5>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-white bg-info mb-3">
+      <div class="card-header">Turnos completados</div>
+      <div class="card-body">
+        <h5 class="card-title">{{ monthly_appointments }}</h5>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-dark bg-light mb-3">
+      <div class="card-header">Servicio destacado</div>
+      <div class="card-body">
+        <h5 class="card-title">{{ top_service }}</h5>
+      </div>
+    </div>
+  </div>
+</div>
+<h3>Gráficos</h3>
+<!-- Gráfico de Ganancias -->
+<div class="card">
+  <div class="card-header">
+    Evolución de ingresos mensuales
+  </div>
+  <div class="card-body">
+    <canvas id="earningsChart"></canvas>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<!-- CDN de Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const ctx = document.getElementById('earningsChart').getContext('2d');
+
+    fetch("{% url 'earnings_chart_data' %}")
+      .then(response => response.json())
+      .then(data => {
+        new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: data.labels,
+            datasets: [{
+              label: 'Ingresos ($)',
+              data: data.data,
+              borderColor: 'rgb(75, 192, 192)',
+              tension: 0.1,
+              fill: true,
+            }]
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true
+              }
+            }
+          }
+        });
+      })
+      .catch(error => console.error('Error al cargar los datos del gráfico:', error));
+  });
+</script>
+{% endblock %}

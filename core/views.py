@@ -1,6 +1,9 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy, reverse
 from django.http import HttpResponseRedirect, JsonResponse
+from django.utils import timezone
+from django.db.models import Sum, Count
+from django.db.models.functions import TruncMonth
 from django.views.generic import CreateView
 from django.contrib.auth import login
 from django.contrib.auth.views import LoginView
@@ -107,9 +110,9 @@ class HomeView(ListView):
         ).distinct()[:5]
 
         fallback_coords = get_location_from_ip(self.request)
-        context['fallback_lat'] = fallback_coords['lat']
-        context['fallback_lon'] = fallback_coords['lon']
-        
+        context["fallback_lat"] = fallback_coords["lat"]
+        context["fallback_lon"] = fallback_coords["lon"]
+
         return context
 
 
@@ -179,3 +182,57 @@ def hairdresser_map_data(request):
 
 class MapView(TemplateView):
     template_name = "map.html"
+
+
+class OwnerDashboardView(OwnerRequiredMixin, TemplateView):
+    template_name = "owner_dashboard.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        hairdresser = self.request.user.hairdresser_profile  # type: ignore
+        # Datos para las tarjetas de resumen
+        today = timezone.now().date()
+        start_of_month = today.replace(day=1)
+        # Turnos completados este mes
+        completed_this_month = Appointment.objects.filter(
+            service__hairdresser=hairdresser,
+            status="COMPLETED",
+            start_time__gte=start_of_month,
+        )
+        context["monthly_revenue"] = (
+            completed_this_month.aggregate(total=Sum("service__price"))["total"] or 0
+        )
+        context["monthly_appointments"] = completed_this_month.count()
+        # Servicio más popular del mes
+        top_service = (
+            completed_this_month.values("service__name")
+            .annotate(count=Count("service"))
+            .order_by("-count")
+            .first()
+        )
+        context["top_service"] = top_service["service__name"] if top_service else "N/A"
+        return context
+
+
+def earnings_chart_data(request):
+    # Asegurar que el usuario sea un dueño
+    if not (
+        request.user.is_authenticated
+        and request.user.is_owner
+        and hasattr(request.user, "hairdresser_profile")
+    ):
+        return JsonResponse({"error": "No autorizado"}, status=403)
+    hairdresser = request.user.hairdresser_profile
+    # Agrupar turnos completados por mes y sumar precios
+    data = (
+        Appointment.objects.filter(service__hairdresser=hairdresser, status="COMPLETED")
+        .annotate(month=TruncMonth("start_time"))
+        .values("month")
+        .annotate(total_earnings=Sum("service__price"))
+        .order_by("month")
+    )
+    # Formatear para Chart.js
+    labels = [d["month"].strftime("%B %Y") for d in data]
+    earnings = [float(d["total_earnings"]) for d in data]
+
+    return JsonResponse({"labels": labels, "data": earnings})

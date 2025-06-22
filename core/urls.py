@@ -12,6 +12,8 @@ from .views import (
     ServiceDeleteView,
     AppointmentListView,
     hairdresser_map_data,
+    OwnerDashboardView,
+    earnings_chart_data,
 )
 
 urlpatterns = [
@@ -21,6 +23,7 @@ urlpatterns = [
     path("login/", CustomLoginView.as_view(), name="login"),
     path("logout/", LogoutView.as_view(next_page="home"), name="logout"),
     # URLs del CRUD de Servicios
+    path("dashboard/", OwnerDashboardView.as_view(), name="owner_dashboard"),
     path("my-services/", ServiceListView.as_view(), name="service_list"),
     path("my-services/new/", ServiceCreateView.as_view(), name="service_create"),
     path(
@@ -39,4 +42,5 @@ urlpatterns = [
     path("my-appointments/", AppointmentListView.as_view(), name="my_appointments"),
     # URLs de la API
     path("api/map-data/", hairdresser_map_data, name="map_data"),
+    path("api/earnings-chart/", earnings_chart_data, name="earnings_chart_data"),
 ]

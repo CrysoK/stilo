@@ -34,6 +34,9 @@
             {% endif %}
             {% if user.is_owner %}
             <li class="nav-item">
+              <a class="nav-link" href="{% url 'owner_dashboard' %}">Mi Dashboard</a>
+            </li>
+            <li class="nav-item">
               <a class="nav-link" href="{% url 'service_list' %}">Mis Servicios</a>
             </li>
             {% endif %}
