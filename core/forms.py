@@ -1,7 +1,17 @@
 from django import forms
 from django.utils import timezone
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from .models import User, Hairdresser, Appointment, Service
+
+
+class ServiceForm(forms.ModelForm):
+    class Meta:
+        model = Service
+        fields = ["name", "description", "price", "duration_minutes"]
+
+
+class LoginForm(AuthenticationForm):
+    pass
 
 
 class SignUpForm(UserCreationForm):
@@ -9,20 +19,13 @@ class SignUpForm(UserCreationForm):
         required=False,
         label="Soy dueño de una peluquería",
         help_text="Marca esta opción si deseas registrar tu peluquería",
-        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'})
     )
 
     hairdresser_name = forms.CharField(
-        max_length=100,
-        required=False,
-        label="Nombre de la peluquería",
-        widget=forms.TextInput(attrs={'class': 'form-control'})
+        max_length=100, required=False, label="Nombre de la peluquería"
     )
     hairdresser_address = forms.CharField(
-        max_length=255,
-        required=False,
-        label="Dirección de la peluquería",
-        widget=forms.TextInput(attrs={'class': 'form-control'})
+        max_length=255, required=False, label="Dirección de la peluquería"
     )
 
     class Meta:
@@ -42,19 +45,19 @@ class SignUpForm(UserCreationForm):
             if not cleaned_data.get("hairdresser_name"):
                 self.add_error(
                     "hairdresser_name",
-                    "Este campo es obligatorio si eres dueño de una peluquería."
+                    "Este campo es obligatorio si eres dueño de una peluquería.",
                 )
             if not cleaned_data.get("hairdresser_address"):
                 self.add_error(
                     "hairdresser_address",
-                    "Este campo es obligatorio si eres dueño de una peluquería."
+                    "Este campo es obligatorio si eres dueño de una peluquería.",
                 )
         return cleaned_data
 
     def save(self, commit=True):
         user = super().save(commit=False)
         user.is_owner = self.cleaned_data.get("is_owner", False)
-        
+
         if commit:
             user.save()
             if user.is_owner:
@@ -67,28 +70,27 @@ class SignUpForm(UserCreationForm):
 
 
 class AppointmentForm(forms.ModelForm):
-    start_time = forms.DateTimeField(
-        label="Fecha y Hora del Turno",
-        widget=forms.DateTimeInput(
-            attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"
-        ),
-    )
+    def __init__(self, *args, **kwargs):
+        hairdresser = kwargs.pop("hairdresser", None)
+        super().__init__(*args, **kwargs)
+
+        # Update service queryset if hairdresser is provided
+        if hairdresser:
+            self.fields["service"].queryset = Service.objects.filter(
+                hairdresser=hairdresser
+            )
+        else:
+            self.fields["service"].queryset = Service.objects.none()
+
+        # Set minimum datetime
+        now = timezone.now()
+        self.fields["start_time"].widget.attrs["min"] = timezone.localtime(
+            now
+        ).strftime("%Y-%m-%dT%H:%M:%S")
 
     class Meta:
         model = Appointment
         fields = ["service", "start_time"]
-
-    def __init__(self, *args, **kwargs):
-        hairdresser = kwargs.pop("hairdresser", None)
-        super().__init__(*args, **kwargs)
-        if hairdresser:
-            self.fields["service"].queryset = Service.objects.filter(  # type: ignore
-                hairdresser=hairdresser
-            )
-        now = timezone.now()
-        local_now = timezone.localtime(now)
-        min_datetime_str = local_now.strftime("%Y-%m-%dT%H:%M:%S")
-        self.fields["start_time"].widget.attrs["min"] = min_datetime_str
 
     def clean_start_time(self):
         """

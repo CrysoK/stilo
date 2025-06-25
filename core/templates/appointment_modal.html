@@ -9,10 +9,9 @@
         <p><strong>Fecha y Hora:</strong> <span id="modalDateTime"></span></p>
         <form id="appointmentForm" method="post">
           {% csrf_token %}
-          {{ form.service.label_tag }}
-          {{ form.service }}
+          {% load crispy_forms_tags %}
+          {{ form|crispy }}
           <input type="hidden" name="start_time" id="modalStartTime">
-          {{ form.service.errors }}
         </form>
       </div>
       <div class="modal-footer">

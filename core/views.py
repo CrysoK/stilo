@@ -17,7 +17,7 @@ from django.views.generic import (
     TemplateView,
 )
 
-from .forms import SignUpForm, AppointmentForm
+from .forms import SignUpForm, AppointmentForm, LoginForm
 from .models import Appointment, Hairdresser, Service
 from .utils import get_location_from_ip
 
@@ -37,6 +37,7 @@ class SignUpView(CreateView):
 
 class CustomLoginView(LoginView):
     template_name = "login.html"
+    form_class = LoginForm
 
 
 # Este Mixin verifica que el usuario sea 'owner' Y que tenga un perfil de peluquería
