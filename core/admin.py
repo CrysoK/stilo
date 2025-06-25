@@ -26,17 +26,16 @@ class CustomUserAdmin(UserAdmin):
         "first_name",
         "last_name",
         "is_staff",
-        "is_client",
         "is_owner",
     )
 
     # Añade los campos a los fieldsets para poder editarlos
     # Copiamos los fieldsets originales y añadimos el nuestro
     fieldsets = list(UserAdmin.fieldsets) + [
-        ("Roles", {"fields": ("is_client", "is_owner")}),
+        ("Roles", {"fields": ("is_owner",)}),
     ]
     add_fieldsets = list(UserAdmin.add_fieldsets) + [
-        ("Roles", {"fields": ("is_client", "is_owner")}),
+        ("Roles", {"fields": ("is_owner",)}),
     ]
 
 

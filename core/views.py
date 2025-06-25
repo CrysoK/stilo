@@ -131,7 +131,7 @@ class HairdresserDetailView(DetailView):
 
     def post(self, request, *args, **kwargs):
         # Solo clientes logueados pueden reservar
-        if not request.user.is_authenticated or not request.user.is_client:
+        if not request.user.is_authenticated:
             return redirect("login")
 
         hairdresser = self.get_object()

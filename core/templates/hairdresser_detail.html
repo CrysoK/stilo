@@ -59,7 +59,7 @@
       <div class="card shadow-sm">
         <div class="card-body">
           <h4 class="card-title mb-3">Selecciona un horario</h4>
-          {% if user.is_authenticated and user.is_client %}
+          {% if user.is_authenticated %}
           <div class="position-relative">
             <div id='calendar' class="mb-2"></div>
           </div>

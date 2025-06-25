@@ -104,7 +104,6 @@ class Command(BaseCommand):
                 password="password123",
                 first_name=first_name,
                 last_name=last_name,
-                is_client=True,
             )
             clients.append(client)
         self.stdout.write(self.style.SUCCESS(f"{NUM_CLIENTS} clientes creados."))

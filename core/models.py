@@ -12,7 +12,6 @@ class User(AbstractUser):
     Roles simples con booleanos.
     """
 
-    is_client = models.BooleanField("client status", default=False)
     is_owner = models.BooleanField("owner status", default=False)
 
     def __str__(self):

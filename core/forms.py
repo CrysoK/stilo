@@ -5,23 +5,24 @@ from .models import User, Hairdresser, Appointment, Service
 
 
 class SignUpForm(UserCreationForm):
-    ROLE_CHOICES = (
-        ("CLIENT", "Soy un cliente"),
-        ("OWNER", "Soy dueño de una peluquería"),
-    )
-    role = forms.ChoiceField(
-        choices=ROLE_CHOICES,
-        required=True,
-        label="Quiero registrarme como",
-        widget=forms.RadioSelect,
+    is_owner = forms.BooleanField(
+        required=False,
+        label="Soy dueño de una peluquería",
+        help_text="Marca esta opción si deseas registrar tu peluquería",
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'})
     )
 
-    # Si es dueño:
     hairdresser_name = forms.CharField(
-        max_length=100, required=False, label="Nombre de la peluquería"
+        max_length=100,
+        required=False,
+        label="Nombre de la peluquería",
+        widget=forms.TextInput(attrs={'class': 'form-control'})
     )
     hairdresser_address = forms.CharField(
-        max_length=255, required=False, label="Dirección de la peluquería"
+        max_length=255,
+        required=False,
+        label="Dirección de la peluquería",
+        widget=forms.TextInput(attrs={'class': 'form-control'})
     )
 
     class Meta:
@@ -31,43 +32,37 @@ class SignUpForm(UserCreationForm):
             "first_name",
             "last_name",
             "email",
+            "is_owner",
         )
 
     def clean(self):
         cleaned_data = super().clean()
-        role = cleaned_data.get("role")
-        if role == "OWNER":
+        is_owner = cleaned_data.get("is_owner")
+        if is_owner:
             if not cleaned_data.get("hairdresser_name"):
                 self.add_error(
                     "hairdresser_name",
-                    "Este campo es obligatorio si eres dueño de una peluquería.",
+                    "Este campo es obligatorio si eres dueño de una peluquería."
                 )
             if not cleaned_data.get("hairdresser_address"):
                 self.add_error(
                     "hairdresser_address",
-                    "Este campo es obligatorio si eres dueño de una peluquería.",
+                    "Este campo es obligatorio si eres dueño de una peluquería."
                 )
         return cleaned_data
 
     def save(self, commit=True):
         user = super().save(commit=False)
-        if self.cleaned_data["role"] == "CLIENT":
-            user.is_client = True
-            user.is_owner = False
-        else:
-            user.is_owner = True
-            user.is_client = False
-
+        user.is_owner = self.cleaned_data.get("is_owner", False)
+        
         if commit:
             user.save()
             if user.is_owner:
-                # Crear peluquería asociada
                 Hairdresser.objects.create(
                     owner=user,
                     name=self.cleaned_data["hairdresser_name"],
                     address=self.cleaned_data["hairdresser_address"],
                 )
-
         return user
 
 
