@@ -236,3 +236,20 @@ def earnings_chart_data(request):
     earnings = [float(d["total_earnings"]) for d in data]
 
     return JsonResponse({"labels": labels, "data": earnings})
+
+
+def appointment_events_data(request, hairdresser_id):
+    # Devuelve los turnos de una peluquería como eventos de FullCalendar
+    appointments = Appointment.objects.filter(service__hairdresser_id=hairdresser_id)
+    events = []
+    for app in appointments:
+        events.append(
+            {
+                "title": "Reservado",  # Por privacidad
+                "start": app.start_time.isoformat(),
+                "end": app.end_time.isoformat(),
+                "color": "#dc3545",
+                # "display": "background",
+            }
+        )
+    return JsonResponse(events, safe=False)

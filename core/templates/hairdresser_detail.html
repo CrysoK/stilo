@@ -2,45 +2,178 @@
 
 {% block title %}{{ hairdresser.name }}{% endblock %}
 
-{% block content %}
-<div class="row">
-  <div class="col-md-8">
-    <h1>{{ hairdresser.name }}</h1>
-    <p class="lead">{{ hairdresser.address }}</p>
-    <p>{{ hairdresser.description|default:"No hay descripción disponible." }}</p>
+{% block extra_head %}
+<!-- FullCalendar CDN -->
+<script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.17/index.global.min.js'></script>
+<script src='https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.17/locales/es.global.min.js'></script>
+<script src="https://cdn.jsdelivr.net/npm/@fullcalendar/bootstrap5@6.1.17/index.global.min.js"></script>
+<style>
+  .popover {
+    --bs-popover-max-width: 200px;
+    --bs-popover-border-color: #dc3545;
+    --bs-popover-header-bg: #dc3545;
+    --bs-popover-header-color: #fff;
+  }
+</style>
+{% endblock %}
 
-    <h3 class="mt-4">Servicios Ofrecidos</h3>
-    <ul class="list-group">
-      {% for service in services %}
-      <li class="list-group-item">
-        <strong>{{ service.name }}</strong> - ${{ service.price }} ({{ service.duration_minutes }} min)
-      </li>
-      {% empty %}
-      <li class="list-group-item">Esta peluquería aún no ha cargado servicios.</li>
-      {% endfor %}
-    </ul>
-  </div>
-  <div class="col-md-4">
-    <div class="card">
-      <div class="card-body">
-        <h5 class="card-title">Reservar Turno</h5>
-        {% if user.is_authenticated and user.is_client %}
-        <form method="post">
-          {% csrf_token %}
-          {{ form.as_p }}
-          <div class="d-grid">
-            <button type="submit" class="btn btn-success mt-2">Confirmar Reserva</button>
+{% block content %}
+<div class="container py-4">
+  <div class="row">
+    <div class="col-lg-4 mb-4">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h1 class="card-title h2 mb-3">{{ hairdresser.name }}</h1>
+          <p class="lead text-primary mb-2">
+            <i class="bi bi-geo-alt-fill"></i> {{ hairdresser.address }}
+          </p>
+          <p class="card-text">{{ hairdresser.description|default:"No hay descripción disponible." }}</p>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mt-4">
+        <div class="card-body">
+          <h3 class="h4 card-title mb-3">Servicios ofrecidos</h3>
+          <div class="list-group">
+            {% for service in services %}
+            <div class="list-group-item list-group-item-action">
+              <div class="d-flex w-100 justify-content-between align-items-center">
+                <div>
+                  <h6 class="mb-1">{{ service.name }}</h6>
+                  <small class="text-muted">{{ service.duration_minutes }} minutos</small>
+                </div>
+                <span class="badge bg-primary rounded-pill">${{ service.price }}</span>
+              </div>
+            </div>
+            {% empty %}
+            <div class="list-group-item text-center text-muted">
+              Esta peluquería aún no ha cargado servicios.
+            </div>
+            {% endfor %}
           </div>
-        </form>
-        {% elif user.is_authenticated and user.is_owner %}
-        <p class="text-muted">Los dueños no pueden reservar turnos.</p>
-        {% else %}
-        <p>
-          <a href="{% url 'login' %}?next={{ request.path }}">Inicia sesión como cliente</a> para reservar.
-        </p>
-        {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h4 class="card-title mb-3">Selecciona un horario</h4>
+          {% if user.is_authenticated and user.is_client %}
+          <div class="position-relative">
+            <div id='calendar' class="mb-2"></div>
+          </div>
+          <p class="text-muted small">
+            <i class="bi bi-info-circle"></i> Haz clic en un horario libre para reservar.
+          </p>
+          {% elif user.is_authenticated and user.is_owner %}
+          <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> Los dueños no pueden reservar turnos.
+          </div>
+          {% else %}
+          <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle"></i>
+            <a href="{% url 'login' %}?next={{ request.path }}" class="alert-link">Inicia sesión como cliente</a>
+            para ver el calendario y reservar.
+          </div>
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>
 </div>
+
+{% include 'appointment_modal.html' %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function showPopover(target, message, event = null) {
+    // Clean up any existing popovers
+    const existingPopovers = document.querySelectorAll('[data-bs-toggle="popover"]');
+    existingPopovers.forEach(el => {
+      const popover = bootstrap.Popover.getInstance(el);
+      if (popover) {
+        popover.dispose();
+      }
+    });
+
+    // Create temporary element for click-based popovers
+    let element = target;
+    if (event) {
+      element = document.createElement('div');
+      element.style.position = 'absolute';
+      element.style.left = event.pageX + 'px';
+      element.style.top = (event.pageY - 10) + 'px'; // Offset up slightly for better visibility
+      document.body.appendChild(element);
+    }
+
+    const popover = new bootstrap.Popover(element, {
+      content: message,
+      placement: 'auto',
+      trigger: 'manual',
+      customClass: 'text-danger'
+    });
+    
+    popover.show();
+    setTimeout(() => {
+      popover.hide();
+      // Remove temporary element if it was created
+      if (event) {
+        setTimeout(() => element.remove(), 150);
+      }
+    }, 2000);
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    let calendarEl = document.getElementById('calendar');
+    let appointmentModal = new bootstrap.Modal(document.getElementById('appointmentModal'));
+    let calendar = new FullCalendar.Calendar(calendarEl, {
+      locale: 'es',
+      themeSystem: 'bootstrap5',
+      initialView: 'timeGridWeek',
+      headerToolbar: {
+        left: 'prev,next today',
+        center: 'title',
+        right: 'dayGridMonth,timeGridWeek'
+      },
+      expandRows: true,
+      slotMinTime: "09:00:00", // TODO: obtener de la base de datos
+      slotMaxTime: "20:00:00", // TODO: obtener de la base de datos
+      slotLabelInterval: '01:00:00',
+      slotDuration: '00:30:00', // Segmentación visual
+      snapDuration: '00:05:00', // Segmentación para clicks
+      allDaySlot: false,
+      nowIndicator: true,
+      scrollTime: (new Date()).toISOString().slice(0, 16),
+      events: "{% url 'appointment_events' hairdresser.pk %}",
+      eventClick: function (info) {
+        // Prevenir reservas en turnos ocupados
+        if (info.event.title === "Reservado") {
+          showPopover(info.el, "Este horario ya está reservado");
+          return;
+        }
+      },
+      dateClick: function (info) {
+        // Prevenir reservas en horarios pasados
+        const now = new Date();
+        const selectedDateTime = info.date;
+        if (selectedDateTime < now) {
+          showPopover(null, "No se pueden reservar horarios pasados", info.jsEvent);
+          return;
+        }
+        // Formatear fecha y hora para el modal y el formulario
+        const formattedDateTime = selectedDateTime.toLocaleString("es-ES", {
+          dateStyle: "long", timeStyle: "short"
+        })
+        const isoDateTime = new Date(selectedDateTime.getTime() - (selectedDateTime.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+        document.getElementById("modalDateTime").innerText = formattedDateTime;
+        document.getElementById("modalStartTime").value = isoDateTime;
+        appointmentModal.show();
+      }
+    })
+    calendar.render();
+  })
+</script>
 {% endblock %}

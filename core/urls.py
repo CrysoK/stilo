@@ -11,6 +11,7 @@ from .views import (
     ServiceUpdateView,
     ServiceDeleteView,
     AppointmentListView,
+    appointment_events_data,
     hairdresser_map_data,
     OwnerDashboardView,
     earnings_chart_data,
@@ -43,4 +44,9 @@ urlpatterns = [
     # URLs de la API
     path("api/map-data/", hairdresser_map_data, name="map_data"),
     path("api/earnings-chart/", earnings_chart_data, name="earnings_chart_data"),
+    path(
+        "api/hairdresser/<int:hairdresser_id>/events/",
+        appointment_events_data,
+        name="appointment_events",
+    ),
 ]
