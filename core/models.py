@@ -147,3 +147,50 @@ class Offer(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.discount_percentage}%)"
+
+
+class WorkingHours(models.Model):
+    """
+    Horario de trabajo semanal de una peluquería.
+    Permite definir múltiples franjas horarias por día.
+    """
+    DAYS_OF_WEEK = [
+        (0, 'Lunes'),
+        (1, 'Martes'),
+        (2, 'Miércoles'),
+        (3, 'Jueves'),
+        (4, 'Viernes'),
+        (5, 'Sábado'),
+        (6, 'Domingo'),
+    ]
+
+    hairdresser = models.ForeignKey(
+        Hairdresser,
+        on_delete=models.CASCADE,
+        related_name='working_hours'
+    )
+    day_of_week = models.IntegerField(
+        verbose_name="Día de la semana",
+        choices=DAYS_OF_WEEK,
+        help_text="Día de la semana (0=Lunes, 6=Domingo)"
+    )
+    start_time = models.TimeField(
+        help_text="Hora de apertura de esta franja horaria"
+    )
+    end_time = models.TimeField(
+        help_text="Hora de cierre de esta franja horaria"
+    )
+
+    class Meta:
+        ordering = ['day_of_week', 'start_time']
+        # Asegura que no haya superposición de horarios para el mismo día
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(start_time__lt=models.F('end_time')),
+                name='valid_working_hours_range'
+            )
+        ]
+
+    def __str__(self):
+        days = dict(self.DAYS_OF_WEEK)
+        return f"{days[self.day_of_week]}: {self.start_time.strftime('%H:%M')} - {self.end_time.strftime('%H:%M')}"

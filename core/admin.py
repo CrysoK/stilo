@@ -8,6 +8,7 @@ from .models import (
     Review,
     HairdresserImage,
     Offer,
+    WorkingHours,
 )
 
 # Register your models here.
@@ -53,11 +54,18 @@ class HairdresserImageInline(admin.TabularInline):
     extra = 1
 
 
+class WorkingHoursInline(admin.TabularInline):
+    """Permite editar los horarios directamente desde la vista de la peluquería."""
+    model = WorkingHours
+    extra = 1
+    ordering = ['day_of_week', 'start_time']
+
+
 @admin.register(Hairdresser)
 class HairdresserAdmin(admin.ModelAdmin):
     list_display = ("name", "owner", "address", "phone_number")
     search_fields = ("name", "address", "owner__username")
-    inlines = [ServiceInline, HairdresserImageInline]
+    inlines = [ServiceInline, HairdresserImageInline, WorkingHoursInline]
 
 
 @admin.register(Appointment)
