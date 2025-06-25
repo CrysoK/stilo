@@ -84,6 +84,7 @@
 
 {% endblock %}
 {% block extra_scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   // Coordenadas de fallback si el usuario no da permiso
   const fallback_lat = {{ fallback_lat|safe }};
