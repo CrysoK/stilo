@@ -36,7 +36,28 @@ class SignUpForm(UserCreationForm):
             "last_name",
             "email",
             "is_owner",
+            "hairdresser_name",
+            "hairdresser_address",
         )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["hairdresser_name"].widget.attrs["class"] = "hairdresser-field"
+        self.fields["hairdresser_address"].widget.attrs["class"] = "hairdresser-field"
+        
+        # Reorder fields to move is_owner after common fields
+        field_order = [
+            "username",
+            "first_name",
+            "last_name",
+            "email",
+            "password1",
+            "password2",
+            "is_owner",
+            "hairdresser_name",
+            "hairdresser_address"
+        ]
+        self.order_fields(field_order)
 
     def clean(self):
         cleaned_data = super().clean()

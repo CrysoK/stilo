@@ -3,6 +3,16 @@
 
 {% block title %}Registrarse{% endblock %}
 
+{% block extra_head %}
+<style>
+/* Hide hairdresser fields by default */
+#div_id_hairdresser_name,
+#div_id_hairdresser_address {
+    display: none;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <h2>Registrarse</h2>
 <form method="post">
@@ -10,4 +20,26 @@
   {{ form|crispy }}
   <button type="submit" class="btn btn-primary">Registrarse</button>
 </form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const isOwnerCheckbox = document.querySelector('#id_is_owner');
+    const hairdresserNameDiv = document.querySelector('#div_id_hairdresser_name');
+    const hairdresserAddressDiv = document.querySelector('#div_id_hairdresser_address');
+
+    function toggleHairdresserFields() {
+        const display = isOwnerCheckbox.checked ? 'block' : 'none';
+        hairdresserNameDiv.style.display = display;
+        hairdresserAddressDiv.style.display = display;
+    }
+
+    // Set initial state on page load
+    toggleHairdresserFields();
+
+    // Add change event listener
+    isOwnerCheckbox.addEventListener('change', toggleHairdresserFields);
+});
+</script>
 {% endblock %}
