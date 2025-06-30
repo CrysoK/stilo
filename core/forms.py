@@ -119,7 +119,6 @@ class WorkingHoursForm(forms.ModelForm):
         self.fields["day_of_week"].widget.choices = WorkingHours.DAYS_OF_WEEK  # type: ignore
         # Make day_of_week field initially empty
         self.fields["day_of_week"].initial = None
-        self.fields["day_of_week"].empty_label = "---------"
 
     def clean(self):
         # If the form is marked for deletion, skip validation entirely
