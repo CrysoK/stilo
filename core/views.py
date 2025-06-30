@@ -286,7 +286,15 @@ class MyHairdresserView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
     success_url = reverse_lazy("my_hairdresser")
 
     def test_func(self):
+        if not self.request.user.is_authenticated:
+            return False
         return self.request.user.is_owner  # type: ignore
+
+    def handle_no_permission(self):
+        if not self.request.user.is_authenticated:
+            return redirect('login')
+        messages.error(self.request, "Esta página es solo para dueños de peluquerías.")
+        return redirect('home')
 
     def get_object(self, queryset=None):
         # Try to get the existing hairdresser profile
@@ -310,20 +318,15 @@ class MyHairdresserView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
 
     def form_valid(self, form):
         context = self.get_context_data()
-        working_hours_formset = WorkingHoursFormSet(
-            self.request.POST, instance=self.get_object()
-        )
-
+        working_hours_formset = context['working_hours_formset']
+        
         if form.is_valid() and working_hours_formset.is_valid():
             self.object = form.save()
-            working_hours_formset.instance = self.object
             working_hours_formset.save()
+            messages.success(self.request, "Los cambios se han guardado correctamente.")
             return redirect(self.success_url)
-        else:
-            # If validation fails, re-render the form with errors
-            context["form"] = form
-            context["working_hours_formset"] = working_hours_formset
-            return self.render_to_response(context)
+            
+        return self.render_to_response(context)
 
 
 class UserProfileView(LoginRequiredMixin, UpdateView):

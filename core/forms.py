@@ -1,6 +1,10 @@
 from django import forms
 from django.utils import timezone
-from django.contrib.auth.forms import UserCreationForm, AuthenticationForm, PasswordChangeForm
+from django.contrib.auth.forms import (
+    UserCreationForm,
+    AuthenticationForm,
+    PasswordChangeForm,
+)
 from .models import User, Hairdresser, Appointment, Service, WorkingHours
 
 
@@ -113,11 +117,31 @@ class WorkingHoursForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["day_of_week"].widget.choices = WorkingHours.DAYS_OF_WEEK  # type: ignore
+        # Make day_of_week field initially empty
+        self.fields["day_of_week"].initial = None
+        self.fields["day_of_week"].empty_label = "---------"
 
     def clean(self):
+        # If the form is marked for deletion, skip validation entirely
+        if self.cleaned_data.get("DELETE"):
+            return self.cleaned_data
+
         cleaned_data = super().clean()
 
-        # If the form is marked for deletion, clear all errors and skip further validation
+        # If either start_time or end_time is filled, both should be required
+        start_time = cleaned_data.get("start_time")
+        end_time = cleaned_data.get("end_time")
+
+        if start_time and not end_time:
+            self.add_error(
+                "end_time",
+                "Si especifica hora de inicio, debe especificar hora de fin.",
+            )
+        elif end_time and not start_time:
+            self.add_error(
+                "start_time",
+                "Si especifica hora de fin, debe especificar hora de inicio.",
+            )
         if self.cleaned_data.get("DELETE"):
             # Clear any errors that might have been added by super().clean()
             self._errors = {}
@@ -163,46 +187,15 @@ class WorkingHoursForm(forms.ModelForm):
 
 
 class BaseWorkingHoursFormSet(forms.BaseInlineFormSet):
-    def clean(self):
-        super().clean()
-        if any(self.errors):
-            # Don't bother validating the formset unless each form is valid on its own
-            return
-
-        # Collect valid forms' cleaned data
-        valid_forms_data = []
-        for form in self.forms:
-            if form.cleaned_data and not form.cleaned_data.get("DELETE", False):
-                valid_forms_data.append(form.cleaned_data)
-
-        # Check for overlaps among the forms in the current formset submission
-        for i, form_data1 in enumerate(valid_forms_data):
-            start_time1 = form_data1.get("start_time")
-            end_time1 = form_data1.get("end_time")
-            day_of_week1 = form_data1.get("day_of_week")
-
-            for j, form_data2 in enumerate(valid_forms_data):
-                if i == j:
-                    continue  # Don't compare a form with itself
-
-                start_time2 = form_data2.get("start_time")
-                end_time2 = form_data2.get("end_time")
-                day_of_week2 = form_data2.get("day_of_week")
-
-                if day_of_week1 == day_of_week2:
-                    # Check for overlap
-                    if start_time1 < end_time2 and end_time1 > start_time2:
-                        raise forms.ValidationError(
-                            "Hay horarios superpuestos en el mismo día dentro de esta lista. Por favor, ajusta los horarios."
-                        )
+    pass
 
 
 WorkingHoursFormSet = forms.inlineformset_factory(
     Hairdresser,
     WorkingHours,
     form=WorkingHoursForm,
-    formset=BaseWorkingHoursFormSet,  # Use the custom base formset
-    extra=0,
+    formset=BaseWorkingHoursFormSet,
+    extra=1,
     can_delete=True,
 )
 
@@ -211,6 +204,6 @@ class CustomPasswordChangeForm(PasswordChangeForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Modificar autocomplete para cada campo de contraseña
-        self.fields['old_password'].widget.attrs['autocomplete'] = 'current-password'
-        self.fields['new_password1'].widget.attrs['autocomplete'] = 'new-password'
-        self.fields['new_password2'].widget.attrs['autocomplete'] = 'new-password'
+        self.fields["old_password"].widget.attrs["autocomplete"] = "current-password"
+        self.fields["new_password1"].widget.attrs["autocomplete"] = "new-password"
+        self.fields["new_password2"].widget.attrs["autocomplete"] = "new-password"
