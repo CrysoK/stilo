@@ -25,6 +25,9 @@
           <ul class="navbar-nav ms-auto">
             {% if user.is_authenticated %}
             <li class="nav-item">
+              <span class="nav-link">{{ user.username }}</span>
+            </li>
+            <li class="nav-item">
               <a class="nav-link" href="{% url 'my_appointments' %}">Turnos</a>
             </li>
             {% if user.is_owner %}
@@ -38,18 +41,15 @@
               <a class="nav-link" href="{% url 'service_list' %}">Servicios</a>
             </li>
             {% endif %}
-            <li class="nav-item dropdown">
-              <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                {{ user.username }}
-              </a>
-              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
-                <li>
-                  <form method="post" action="{% url 'logout' %}" class="dropdown-item">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-link nav-link p-0 border-0 bg-transparent text-start w-100">Cerrar sesión</button>
-                  </form>
-                </li>
-              </ul>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'user_profile' %}">Perfil</a>
+            </li>
+            <li class="nav-item">
+              <!-- Logout -->
+              <form action="{% url 'logout' %}" method="post" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-link nav-link">Cerrar sesión</button>
+              </form>
             </li>
             {% else %}
             <li class="nav-item">
@@ -65,6 +65,16 @@
     </nav>
 
     <main class="container mt-4">
+      {% if messages %}
+      <div class="messages">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
       {% block content %}{% endblock %}
     </main>
 

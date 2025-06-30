@@ -12,6 +12,9 @@ class User(AbstractUser):
     Roles simples con booleanos.
     """
 
+    first_name = models.CharField("Nombre", max_length=150, blank=False)
+    last_name = models.CharField("Apellido", max_length=150, blank=False)
+    email = models.EmailField("Correo electrónico", blank=False)
     is_owner = models.BooleanField("owner status", default=False)
 
     def __str__(self):

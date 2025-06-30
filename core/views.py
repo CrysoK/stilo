@@ -5,8 +5,9 @@ from django.utils import timezone
 from django.db.models import Sum, Count
 from django.db.models.functions import TruncMonth
 from django.contrib.auth import login
-from django.contrib.auth.views import LoginView
+from django.contrib.auth.views import LoginView, PasswordChangeView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.contrib import messages
 from django.views.generic import (
     ListView,
     CreateView,
@@ -22,8 +23,10 @@ from .forms import (
     LoginForm,
     HairdresserSetupForm,
     WorkingHoursFormSet,
+    UserProfileForm,
+    CustomPasswordChangeForm,
 )
-from .models import Appointment, Hairdresser, Service
+from .models import Appointment, Hairdresser, Service, User
 from .utils import get_location_from_ip
 
 # Create your views here.
@@ -321,3 +324,28 @@ class MyHairdresserView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
             context["form"] = form
             context["working_hours_formset"] = working_hours_formset
             return self.render_to_response(context)
+
+
+class UserProfileView(LoginRequiredMixin, UpdateView):
+    model = User
+    form_class = UserProfileForm
+    template_name = "user_profile.html"
+    success_url = reverse_lazy("user_profile")
+
+    def get_object(self, queryset=None):
+        # We know this is a User model instance because of LoginRequiredMixin
+        return self.request.user  # type: ignore[return-value]
+
+    def form_valid(self, form):
+        messages.success(self.request, "Tu perfil ha sido actualizado exitosamente.")
+        return super().form_valid(form)
+
+
+class CustomPasswordChangeView(LoginRequiredMixin, PasswordChangeView):
+    template_name = 'password_change.html'
+    form_class = CustomPasswordChangeForm
+    success_url = reverse_lazy('user_profile')
+
+    def form_valid(self, form):
+        messages.success(self.request, "Tu contraseña ha sido cambiada exitosamente.")
+        return super().form_valid(form)

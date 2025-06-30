@@ -16,6 +16,8 @@ from .views import (
     OwnerDashboardView,
     earnings_chart_data,
     MyHairdresserView,
+    UserProfileView,
+    CustomPasswordChangeView,
 )
 
 urlpatterns = [
@@ -43,6 +45,8 @@ urlpatterns = [
         name="hairdresser_detail",
     ),
     path("my-appointments/", AppointmentListView.as_view(), name="my_appointments"),
+    path("profile/", UserProfileView.as_view(), name="user_profile"),
+    path("profile/password/", CustomPasswordChangeView.as_view(), name="password_change"),
     # URLs de la API
     path("api/map-data/", hairdresser_map_data, name="map_data"),
     path("api/earnings-chart/", earnings_chart_data, name="earnings_chart_data"),

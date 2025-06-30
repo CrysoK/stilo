@@ -1,7 +1,13 @@
 from django import forms
 from django.utils import timezone
-from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
+from django.contrib.auth.forms import UserCreationForm, AuthenticationForm, PasswordChangeForm
 from .models import User, Hairdresser, Appointment, Service, WorkingHours
+
+
+class UserProfileForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ["username", "first_name", "last_name", "email"]
 
 
 class ServiceForm(forms.ModelForm):
@@ -199,3 +205,12 @@ WorkingHoursFormSet = forms.inlineformset_factory(
     extra=0,
     can_delete=True,
 )
+
+
+class CustomPasswordChangeForm(PasswordChangeForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Modificar autocomplete para cada campo de contraseña
+        self.fields['old_password'].widget.attrs['autocomplete'] = 'current-password'
+        self.fields['new_password1'].widget.attrs['autocomplete'] = 'new-password'
+        self.fields['new_password2'].widget.attrs['autocomplete'] = 'new-password'
