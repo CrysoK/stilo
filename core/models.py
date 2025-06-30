@@ -29,16 +29,35 @@ class Hairdresser(models.Model):
         on_delete=models.CASCADE,
         related_name="hairdresser_profile",
     )
-    name = models.CharField(max_length=100)
-    address = models.CharField(max_length=255)
-    phone_number = models.CharField(max_length=20, blank=True)
-    description = models.TextField(blank=True)
-    latitude = models.FloatField(blank=True, null=True)
-    longitude = models.FloatField(blank=True, null=True)
+    name = models.CharField(max_length=100, verbose_name="Nombre")
+    address = models.CharField(max_length=255, verbose_name="Dirección")
+    phone_number = models.CharField(
+        max_length=20, blank=True, verbose_name="Número de teléfono"
+    )
+    description = models.TextField(blank=True, verbose_name="Descripción")
+    latitude = models.FloatField(blank=True, null=True, verbose_name="Latitud")
+    longitude = models.FloatField(blank=True, null=True, verbose_name="Longitud")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.name
+
+    def is_complete(self):
+        """
+        Verifica si el perfil de la peluquería está "completo" para aparecer en
+        el home. Requiere nombre, dirección, latitud, longitud, al menos un
+        horario y al menos un servicio
+        """
+        return all(
+            [
+                self.name,
+                self.address,
+                self.latitude,
+                self.longitude,
+                self.working_hours.exists(),  # type: ignore
+                self.services.exists(),  # type: ignore
+            ]
+        )
 
 
 class Service(models.Model):
@@ -153,42 +172,62 @@ class WorkingHours(models.Model):
     Horario de trabajo semanal de una peluquería.
     Permite definir múltiples franjas horarias por día.
     """
+
     DAYS_OF_WEEK = [
-        (0, 'Lunes'),
-        (1, 'Martes'),
-        (2, 'Miércoles'),
-        (3, 'Jueves'),
-        (4, 'Viernes'),
-        (5, 'Sábado'),
-        (6, 'Domingo'),
+        (0, "Lunes"),
+        (1, "Martes"),
+        (2, "Miércoles"),
+        (3, "Jueves"),
+        (4, "Viernes"),
+        (5, "Sábado"),
+        (6, "Domingo"),
     ]
 
     hairdresser = models.ForeignKey(
-        Hairdresser,
-        on_delete=models.CASCADE,
-        related_name='working_hours'
+        Hairdresser, on_delete=models.CASCADE, related_name="working_hours"
     )
     day_of_week = models.IntegerField(
         verbose_name="Día de la semana",
         choices=DAYS_OF_WEEK,
-        help_text="Día de la semana (0=Lunes, 6=Domingo)"
+        help_text="Día de la semana (0=Lunes, 6=Domingo)",
     )
-    start_time = models.TimeField(
-        help_text="Hora de apertura de esta franja horaria"
-    )
-    end_time = models.TimeField(
-        help_text="Hora de cierre de esta franja horaria"
-    )
+    start_time = models.TimeField(help_text="Hora de apertura de esta franja horaria")
+    end_time = models.TimeField(help_text="Hora de cierre de esta franja horaria")
 
     class Meta:
-        ordering = ['day_of_week', 'start_time']
+        ordering = ["day_of_week", "start_time"]
         # Asegura que no haya superposición de horarios para el mismo día
         constraints = [
             models.CheckConstraint(
-                check=models.Q(start_time__lt=models.F('end_time')),
-                name='valid_working_hours_range'
+                check=models.Q(start_time__lt=models.F("end_time")),
+                name="valid_working_hours_range",
             )
         ]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        # Check for overlapping hours on the same day for the same hairdresser
+        # Exclude the current instance if it's an update
+        overlapping_hours = WorkingHours.objects.filter(
+            hairdresser=self.hairdresser, day_of_week=self.day_of_week
+        ).exclude(pk=self.pk)
+
+        if not self.start_time or not self.end_time:
+            raise ValidationError("Las horas de inicio y fin son obligatorias.")
+
+        for schedule in overlapping_hours:
+            # Ensure schedule times are not None before comparison
+            if schedule.start_time is None or schedule.end_time is None:
+                continue  # Skip this schedule if its times are invalid
+
+            if (
+                self.start_time < schedule.end_time
+                and self.end_time > schedule.start_time
+            ):
+                raise ValidationError(
+                    "Este horario se superpone con otro horario existente para el mismo día y peluquero."
+                )
 
     def __str__(self):
         days = dict(self.DAYS_OF_WEEK)

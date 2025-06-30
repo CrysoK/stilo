@@ -3,7 +3,8 @@
 {% block title %}Mi Dashboard{% endblock %}
 
 {% block content %}
-<h2>Estadísticas de {{ user.hairdresser_profile.name }}</h2>
+<h2 class="mb-4">Estadísticas de {{ user.hairdresser_profile.name }}</h2>
+{% include 'includes/hairdresser_incomplete_warning.html' with hairdresser=user.hairdresser_profile %}
 <!-- Tarjetas de resumen -->
 <h3>Resumen de {% now "F" %}</h3>
 <div class="row my-4">

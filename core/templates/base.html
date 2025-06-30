@@ -25,30 +25,35 @@
           <ul class="navbar-nav ms-auto">
             {% if user.is_authenticated %}
             <li class="nav-item">
-              <span class="nav-link">Hola, {{ user.username }}!</span>
+              <a class="nav-link" href="{% url 'my_appointments' %}">Turnos</a>
             </li>
-            {% if user.is_authenticated %}
-            <li class="nav-item">
-              <a class="nav-link" href="{% url 'my_appointments' %}">Mis Turnos</a>
-            </li>
-            {% endif %}
             {% if user.is_owner %}
             <li class="nav-item">
-              <a class="nav-link" href="{% url 'owner_dashboard' %}">Mi Dashboard</a>
+              <a class="nav-link" href="{% url 'owner_dashboard' %}">Dashboard</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link" href="{% url 'service_list' %}">Mis Servicios</a>
+              <a class="nav-link" href="{% url 'my_hairdresser' %}">Peluquería</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'service_list' %}">Servicios</a>
             </li>
             {% endif %}
-            <li class="nav-item">
-              <form method="post" action="{% url 'logout' %}">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-link nav-link">Cerrar Sesión</button>
-              </form>
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                {{ user.username }}
+              </a>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
+                <li>
+                  <form method="post" action="{% url 'logout' %}" class="dropdown-item">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-link nav-link p-0 border-0 bg-transparent text-start w-100">Cerrar sesión</button>
+                  </form>
+                </li>
+              </ul>
             </li>
             {% else %}
             <li class="nav-item">
-              <a class="nav-link" href="{% url 'login' %}">Iniciar Sesión</a>
+              <a class="nav-link" href="{% url 'login' %}">Iniciar sesión</a>
             </li>
             <li class="nav-item">
               <a class="nav-link" href="{% url 'signup' %}">Registrarse</a>

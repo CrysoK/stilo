@@ -1,0 +1,13 @@
+{% if hairdresser and not hairdresser.is_complete %}
+  <div class="alert alert-warning" role="alert">
+    <strong>¡Atención!</strong> Tu peluquería no está visible en el mapa ni puede recibir reservas hasta que completes la siguiente información:
+    <ul>
+      {% if not hairdresser.name %}<li>Nombre de la peluquería</li>{% endif %}
+      {% if not hairdresser.address %}<li>Dirección</li>{% endif %}
+      {% if not hairdresser.latitude or not hairdresser.longitude %}<li>Coordenadas (asegúrate de que la dirección sea precisa para que se autocompleten)</li>{% endif %}
+      {% if not hairdresser.working_hours.exists %}<li>Al menos un horario de atención</li>{% endif %}
+      {% if not hairdresser.services.exists %}<li>Al menos un servicio ofrecido</li>{% endif %}
+    </ul>
+    Una vez que completes estos datos, tu peluquería aparecerá automáticamente en el mapa y estará lista para recibir reservas.
+  </div>
+{% endif %}

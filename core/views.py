@@ -4,7 +4,6 @@ from django.http import HttpResponseRedirect, JsonResponse
 from django.utils import timezone
 from django.db.models import Sum, Count
 from django.db.models.functions import TruncMonth
-from django.views.generic import CreateView
 from django.contrib.auth import login
 from django.contrib.auth.views import LoginView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -17,7 +16,13 @@ from django.views.generic import (
     TemplateView,
 )
 
-from .forms import SignUpForm, AppointmentForm, LoginForm
+from .forms import (
+    SignUpForm,
+    AppointmentForm,
+    LoginForm,
+    HairdresserSetupForm,
+    WorkingHoursFormSet,
+)
 from .models import Appointment, Hairdresser, Service
 from .utils import get_location_from_ip
 
@@ -43,15 +48,18 @@ class CustomLoginView(LoginView):
 # Este Mixin verifica que el usuario sea 'owner' Y que tenga un perfil de peluquería
 class OwnerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
-        return self.request.user.is_owner and hasattr(  # type: ignore
-            self.request.user, "hairdresser_profile"  # type: ignore
-        )
+        return self.request.user.is_owner  # type: ignore
 
 
 class ServiceListView(OwnerRequiredMixin, ListView):
     model = Service
     template_name = "service_list.html"
     context_object_name = "services"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["hairdresser"] = self.request.user.hairdresser_profile  # type: ignore
+        return context
 
     def get_queryset(self):
         # CRÍTICO: Solo mostrar servicios del dueño logueado
@@ -102,13 +110,25 @@ class HomeView(ListView):
     template_name = "home.html"
     context_object_name = "hairdressers"
 
+    def get_queryset(self):
+        # Prefetch related objects for efficiency when calling is_complete() and images.exists()
+        return (
+            super()
+            .get_queryset()
+            .prefetch_related("working_hours", "services", "images")
+        )
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # Obtenemos peluquerías que tienen al menos una imagen asociada
-        # y las limitamos a 5 para el carrusel.
-        context["featured_hairdressers"] = Hairdresser.objects.filter(
-            images__isnull=False
-        ).distinct()[:5]
+        # self.object_list contains the queryset returned by get_queryset()
+        # Filter for complete hairdressers
+        complete_hairdressers = [h for h in self.get_queryset() if h.is_complete()]
+        context["hairdressers"] = complete_hairdressers
+
+        # Get featured hairdressers from the complete ones that also have images
+        context["featured_hairdressers"] = [
+            h for h in complete_hairdressers if h.images.exists()
+        ][:5]
 
         fallback_coords = get_location_from_ip(self.request)
         context["fallback_lat"] = fallback_coords["lat"]
@@ -219,11 +239,11 @@ def earnings_chart_data(request):
     # Asegurar que el usuario sea un dueño
     if not (
         request.user.is_authenticated
-        and request.user.is_owner
+        and request.user.is_owner  # type: ignore
         and hasattr(request.user, "hairdresser_profile")
     ):
         return JsonResponse({"error": "No autorizado"}, status=403)
-    hairdresser = request.user.hairdresser_profile
+    hairdresser = request.user.hairdresser_profile  # type: ignore
     # Agrupar turnos completados por mes y sumar precios
     data = (
         Appointment.objects.filter(service__hairdresser=hairdresser, status="COMPLETED")
@@ -254,3 +274,50 @@ def appointment_events_data(request, hairdresser_id):
             }
         )
     return JsonResponse(events, safe=False)
+
+
+class MyHairdresserView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
+    model = Hairdresser
+    form_class = HairdresserSetupForm
+    template_name = "my_hairdresser.html"
+    success_url = reverse_lazy("my_hairdresser")
+
+    def test_func(self):
+        return self.request.user.is_owner  # type: ignore
+
+    def get_object(self, queryset=None):
+        # Try to get the existing hairdresser profile
+        try:
+            return self.request.user.hairdresser_profile  # type: ignore
+        except Hairdresser.DoesNotExist:
+            # If it doesn't exist, create a new one
+            return Hairdresser.objects.create(owner=self.request.user)  # type: ignore
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if self.request.POST:
+            context["working_hours_formset"] = WorkingHoursFormSet(
+                self.request.POST, instance=self.get_object()
+            )
+        else:
+            context["working_hours_formset"] = WorkingHoursFormSet(
+                instance=self.get_object()
+            )
+        return context
+
+    def form_valid(self, form):
+        context = self.get_context_data()
+        working_hours_formset = WorkingHoursFormSet(
+            self.request.POST, instance=self.get_object()
+        )
+
+        if form.is_valid() and working_hours_formset.is_valid():
+            self.object = form.save()
+            working_hours_formset.instance = self.object
+            working_hours_formset.save()
+            return redirect(self.success_url)
+        else:
+            # If validation fails, re-render the form with errors
+            context["form"] = form
+            context["working_hours_formset"] = working_hours_formset
+            return self.render_to_response(context)

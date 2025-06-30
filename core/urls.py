@@ -15,6 +15,7 @@ from .views import (
     hairdresser_map_data,
     OwnerDashboardView,
     earnings_chart_data,
+    MyHairdresserView,
 )
 
 urlpatterns = [
@@ -25,6 +26,7 @@ urlpatterns = [
     path("logout/", LogoutView.as_view(next_page="home"), name="logout"),
     # URLs del CRUD de Servicios
     path("dashboard/", OwnerDashboardView.as_view(), name="owner_dashboard"),
+    path("my-hairdresser/", MyHairdresserView.as_view(), name="my_hairdresser"),
     path("my-services/", ServiceListView.as_view(), name="service_list"),
     path("my-services/new/", ServiceCreateView.as_view(), name="service_create"),
     path(

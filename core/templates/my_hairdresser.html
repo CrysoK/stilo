@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Mi Peluquería{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="mb-4">
+    Mi Peluquería
+  </h2>
+
+  {% include 'includes/hairdresser_incomplete_warning.html' with hairdresser=object %}
+
+  <form method="post">
+    {% csrf_token %}
+    
+    <div class="card mb-4">
+      <div class="card-header">
+        <h4 class="mb-0">
+          Información de la peluquería
+        </h4>
+      </div>
+      <div class="card-body">
+        {{ form|crispy }}
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h4 class="mb-0">
+          Horarios de atención
+        </h4>
+        <button type="button" class="btn btn-primary btn-sm" data-formset-add>
+          <i class="bi bi-plus"></i> Agregar horario
+        </button>
+      </div>
+      <div class="card-body">
+        {{ working_hours_formset.management_form }}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Día</th>
+                <th>Hora inicio</th>
+                <th>Hora fin</th>
+                <th style="width: 80px">Acciones</th>
+              </tr>
+            </thead>
+            <tbody data-formset-body>
+              {% for form in working_hours_formset %}
+                <tr data-formset-form>
+                  <td>
+                    {{ form.day_of_week }}
+                    <div style="display: none;">
+                      {{ form.id }}
+                    </div>
+                  </td>
+                  <td>{{ form.start_time }}</td>
+                  <td>{{ form.end_time }}</td>
+                  <td class="text-center">
+                    <div class="btn-group btn-group-sm">
+                      <button type="button" class="btn btn-outline-danger" data-formset-delete-button>
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </div>
+                    <div style="display: none;">
+                      {{ form.DELETE }}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if form.errors or working_hours_formset.non_form_errors %}
+          <div class="alert alert-danger">
+            {% if form.errors %}
+              <p>Por favor corrija los errores en el formulario principal.</p>
+              {% for field, errors in form.errors.items %}
+                {% for error in errors %}
+                  <p>{{ field }}: {{ error }}</p>
+                {% endfor %}
+              {% endfor %}
+            {% endif %}
+            {% if working_hours_formset.non_form_errors %}
+              <p>Errores en los horarios de atención:</p>
+              {% for error in working_hours_formset.non_form_errors %}
+                <p>{{ error }}</p>
+              {% endfor %}
+            {% endif %}
+          </div>
+        {% endif %}
+
+        <div class="text-muted small">
+          <ul class="mb-0">
+            <li>Puede agregar múltiples franjas horarias por día</li>
+            <li>Los horarios no pueden superponerse en el mismo día</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-end">
+      <button type="submit" class="btn btn-primary">
+        Guardar cambios
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const formsetContainer = document.querySelector('[data-formset-body]');
+  
+
+  // Handle DELETE button clicks
+  document.querySelectorAll('[data-formset-delete-button]').forEach(button => {
+    button.addEventListener('click', function() {
+      const form = this.closest('[data-formset-form]');
+      const deleteCheckbox = form.querySelector('input[id$="-DELETE"]');
+      if (deleteCheckbox) {
+        deleteCheckbox.checked = true;
+        form.style.display = 'none';
+      }
+    });
+  });
+
+  // Handle adding new forms
+  const addButton = document.querySelector('[data-formset-add]');
+  const totalFormsInput = document.querySelector('#id_working_hours-TOTAL_FORMS');
+  
+  if (addButton && totalFormsInput) {
+    addButton.addEventListener('click', function() {
+      const forms = document.querySelectorAll('[data-formset-form]');
+      const totalForms = parseInt(totalFormsInput.value);
+      const newForm = forms[0].cloneNode(true);
+      
+      // Update form index
+      newForm.innerHTML = newForm.innerHTML.replace(/-\d+-/g, `-${totalForms}-`);
+      
+      // Clear values
+      newForm.querySelectorAll('input:not([type="hidden"])').forEach(input => {
+        input.value = '';
+      });
+      newForm.querySelectorAll('select').forEach(select => {
+        select.selectedIndex = 0;
+      });
+      
+      // Show the form (in case it was a hidden deleted form)
+      newForm.style.display = '';
+      
+      // Add new form to container
+      formsetContainer.appendChild(newForm);
+      totalFormsInput.value = totalForms + 1;
+
+      // Initialize delete button for new form
+      const newDeleteButton = newForm.querySelector('[data-formset-delete-button]');
+      if (newDeleteButton) {
+        newDeleteButton.addEventListener('click', function() {
+          const deleteCheckbox = newForm.querySelector('input[id$="-DELETE"]');
+          if (deleteCheckbox) {
+            deleteCheckbox.checked = true;
+            newForm.style.display = 'none';
+          }
+        });
+      }
+    });
+  }
+
+});
+</script>
+{% endblock %}
