@@ -1,12 +1,11 @@
 from django.urls import path
 from django.contrib.auth.views import LogoutView
-from django.views.generic import TemplateView
+from django.views.generic import RedirectView
 from .views import (
     HomeView,
     HairdresserDetailView,
     SignUpView,
     CustomLoginView,
-    ServiceListView,
     ServiceCreateView,
     ServiceUpdateView,
     ServiceDeleteView,
@@ -15,7 +14,9 @@ from .views import (
     hairdresser_map_data,
     OwnerDashboardView,
     earnings_chart_data,
-    MyHairdresserView,
+    MyHairdresserInfoView,
+    MyHairdresserHoursView,
+    MyHairdresserServicesView,
     UserProfileView,
     CustomPasswordChangeView,
     get_service_detail,
@@ -29,8 +30,26 @@ urlpatterns = [
     path("logout/", LogoutView.as_view(next_page="home"), name="logout"),
     # URLs del CRUD de Servicios
     path("dashboard/", OwnerDashboardView.as_view(), name="owner_dashboard"),
-    path("my-hairdresser/", MyHairdresserView.as_view(), name="my_hairdresser"),
-    path("my-services/", ServiceListView.as_view(), name="service_list"),
+    path(
+        "my-hairdresser/",
+        RedirectView.as_view(pattern_name="my_hairdresser_info", permanent=False),
+        name="my_hairdresser",
+    ),
+    path(
+        "my-hairdresser/info/",
+        MyHairdresserInfoView.as_view(),
+        name="my_hairdresser_info",
+    ),
+    path(
+        "my-hairdresser/hours/",
+        MyHairdresserHoursView.as_view(),
+        name="my_hairdresser_hours",
+    ),
+    path(
+        "my-hairdresser/services/",
+        MyHairdresserServicesView.as_view(),
+        name="my_hairdresser_services",
+    ),
     path("my-services/new/", ServiceCreateView.as_view(), name="service_create"),
     path(
         "my-services/<int:pk>/edit/", ServiceUpdateView.as_view(), name="service_update"

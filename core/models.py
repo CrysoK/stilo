@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 from django.conf import settings
 
 # Create your models here.
@@ -208,30 +209,43 @@ class WorkingHours(models.Model):
         ]
 
     def clean(self):
-        from django.core.exceptions import ValidationError
+        super().clean()
 
-        # Check for overlapping hours on the same day for the same hairdresser
-        # Exclude the current instance if it's an update
+        # 0. Campos obligatorios
+        if self.day_of_week is None or self.start_time is None or self.end_time is None:
+            return
+
+        # 1. Validación básica de la franja horaria
+        if self.start_time >= self.end_time:
+            raise ValidationError(
+                {"end_time": "La hora de fin debe ser posterior a la hora de inicio."}
+            )
+
+        # 2. Validación de superposición con horarios existentes en la BD
+        # Asegurarse de que tenemos los datos necesarios para la consulta
+        if self.hairdresser is None:
+            return
+
+        # Construir la consulta base para buscar superposiciones
         overlapping_hours = WorkingHours.objects.filter(
-            hairdresser=self.hairdresser, day_of_week=self.day_of_week
-        ).exclude(pk=self.pk)
+            hairdresser=self.hairdresser,
+            day_of_week=self.day_of_week,
+            # Lógica de superposición: (StartA < EndB) y (EndA > StartB)
+            start_time__lt=self.end_time,
+            end_time__gt=self.start_time,
+        )
 
-        if not self.start_time or not self.end_time:
-            raise ValidationError("Las horas de inicio y fin son obligatorias.")
+        # Si estamos actualizando un objeto existente, debemos excluirlo de la comprobación
+        if self.pk:
+            overlapping_hours = overlapping_hours.exclude(pk=self.pk)
 
-        for schedule in overlapping_hours:
-            # Ensure schedule times are not None before comparison
-            if schedule.start_time is None or schedule.end_time is None:
-                continue  # Skip this schedule if its times are invalid
-
-            if (
-                self.start_time < schedule.end_time
-                and self.end_time > schedule.start_time
-            ):
-                raise ValidationError(
-                    "Este horario se superpone con otro horario existente para el mismo día y peluquero."
-                )
+        if overlapping_hours.exists():
+            # Este error se asociará con el formulario que representa este modelo.
+            raise ValidationError(
+                "Este horario se superpone con otro ya existente para el mismo día.",
+                code="overlap_existing",
+            )
 
     def __str__(self):
         days = dict(self.DAYS_OF_WEEK)
-        return f"{days[self.day_of_week]}: {self.start_time.strftime('%H:%M')} - {self.end_time.strftime('%H:%M')}"
+        return f"{days.get(self.day_of_week, 'Día inválido')}: {self.start_time.strftime('%H:%M')} - {self.end_time.strftime('%H:%M')}"

@@ -1,0 +1,141 @@
+{% extends "my_hairdresser_base.html" %}
+{% load crispy_forms_tags %}
+
+{% block tab_content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">Mis servicios</h4>
+  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#serviceFormModal" data-mode="create">
+    <i class="bi bi-plus"></i> Añadir nuevo servicio
+  </button>
+</div>
+
+<ul class="list-group">
+  {% for service in services %}
+  <li class="list-group-item d-flex justify-content-between align-items-center">
+    <div>
+      <strong>{{ service.name }}</strong> - ${{ service.price }} ({{ service.duration_minutes }} min)<br>
+      <small class="text-muted">{{ service.description|default:"" }}</small>
+    </div>
+    <div class="btn-group btn-group-sm">
+      <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" 
+              data-bs-target="#serviceFormModal" data-mode="edit" 
+              data-service-id="{{ service.pk }}"><i class="bi bi-pencil"></i></button>
+      <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" 
+              data-bs-target="#deleteServiceModal" data-service-id="{{ service.pk }}"
+              data-service-name="{{ service.name }}"><i class="bi bi-trash"></i></button>
+    </div>
+  </li>
+  {% empty %}
+  <li class="list-group-item">Aún no has añadido ningún servicio.</li>
+  {% endfor %}
+</ul>
+{% endblock %}
+
+{% block modals %}
+<!-- Modal de formulario de servicio -->
+<div class="modal fade" id="serviceFormModal" tabindex="-1" aria-labelledby="serviceFormModalLabel" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="serviceFormModalLabel">Crear nuevo servicio</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form method="post" id="serviceForm">
+          {% csrf_token %}
+          {{ service_form|crispy }}
+          <div class="modal-footer pb-0">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de borrado de servicio -->
+<div class="modal fade" id="deleteServiceModal" tabindex="-1" aria-labelledby="deleteServiceModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deleteServiceModalLabel">Confirmar borrado</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Estás a punto de borrar el servicio: <strong id="serviceNameToDelete"></strong></p>
+        <p>Esta acción no se puede deshacer.</p>
+        <form method="post" id="deleteServiceForm">
+          {% csrf_token %}
+          <div class="modal-footer pb-0">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-danger">Sí, borrar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block tab_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // --- GESTIÓN DE SERVICIOS ---
+  const serviceFormModal = document.getElementById('serviceFormModal');
+  if (serviceFormModal) {
+    serviceFormModal.addEventListener('show.bs.modal', function(event) {
+      const button = event.relatedTarget;
+      const mode = button.getAttribute('data-mode');
+      const modalTitle = this.querySelector('.modal-title');
+      const form = this.querySelector('#serviceForm');
+      const nameInput = form.querySelector('[name="name"]');
+      const descriptionInput = form.querySelector('[name="description"]');
+      const priceInput = form.querySelector('[name="price"]');
+      const durationInput = form.querySelector('[name="duration_minutes"]');
+      
+      // Reset form errors/values
+      form.reset();
+      form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+      form.querySelectorAll('.invalid-feedback').forEach(el => el.remove());
+
+      if (mode === 'create') {
+        modalTitle.textContent = 'Crear nuevo servicio';
+        form.action = "{% url 'service_create' %}";
+      } else if (mode === 'edit') {
+        const serviceId = button.getAttribute('data-service-id');
+        modalTitle.textContent = 'Editar servicio';
+        form.action = `{% url 'service_update' 0 %}`.replace('0', serviceId);
+        
+        fetch(`{% url 'service_detail' 0 %}`.replace('0', serviceId))
+          .then(response => response.json())
+          .then(data => {
+            nameInput.value = data.name;
+            priceInput.value = data.price;
+            durationInput.value = data.duration_minutes;
+            descriptionInput.value = data.description || '';
+          })
+          .catch(error => {
+            console.error('Error:', error);
+            // Idealmente, aquí se mostraría un mensaje de error al usuario
+          });
+      }
+    });
+  }
+
+  const deleteModal = document.getElementById('deleteServiceModal');
+  if (deleteModal) {
+    deleteModal.addEventListener('show.bs.modal', function(event) {
+      const button = event.relatedTarget;
+      const serviceId = button.getAttribute('data-service-id');
+      const serviceName = button.getAttribute('data-service-name');
+      const form = this.querySelector('#deleteServiceForm');
+      const serviceNameSpan = this.querySelector('#serviceNameToDelete');
+      
+      form.action = `{% url 'service_delete' 0 %}`.replace('0', serviceId);
+      serviceNameSpan.textContent = serviceName;
+    });
+  }
+});
+</script>
+{% endblock %}

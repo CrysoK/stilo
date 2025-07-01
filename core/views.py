@@ -15,6 +15,7 @@ from django.views.generic import (
     DeleteView,
     DetailView,
     TemplateView,
+    View,
 )
 
 from .forms import (
@@ -55,36 +56,10 @@ class OwnerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
         return self.request.user.is_owner  # type: ignore
 
 
-class ServiceListView(OwnerRequiredMixin, ListView):
-    model = Service
-    template_name = "service_list.html"
-    context_object_name = "services"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["hairdresser"] = self.request.user.hairdresser_profile  # type: ignore
-        context["form"] = ServiceForm()  # Add the form to the context
-        return context
-
-    def get_queryset(self):
-        # CRÍTICO: Solo mostrar servicios del dueño logueado
-        return Service.objects.filter(
-            hairdresser=self.request.user.hairdresser_profile  # type: ignore
-        )
-
-
 class ServiceCreateView(OwnerRequiredMixin, CreateView):
     model = Service
     form_class = ServiceForm
-    template_name = "service_list.html"
-    success_url = reverse_lazy("service_list")
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["services"] = Service.objects.filter(
-            hairdresser=self.request.user.hairdresser_profile  # type: ignore
-        )
-        return context
+    success_url = reverse_lazy("my_hairdresser_services")
 
     def form_valid(self, form):
         form.instance.hairdresser = self.request.user.hairdresser_profile  # type: ignore
@@ -92,41 +67,50 @@ class ServiceCreateView(OwnerRequiredMixin, CreateView):
         messages.success(self.request, "Servicio creado exitosamente.")
         return response
 
+    def get(self, request, *args, **kwargs):
+        # Redirigir si se intenta acceder por GET, ya que el formulario está en un modal
+        return redirect("my_hairdresser_services")
+
 
 class ServiceUpdateView(OwnerRequiredMixin, UpdateView):
     model = Service
     form_class = ServiceForm
-    template_name = "service_list.html"
-    success_url = reverse_lazy("service_list")
+    success_url = reverse_lazy("my_hairdresser_services")
 
     def get_queryset(self):
         return Service.objects.filter(
             hairdresser=self.request.user.hairdresser_profile  # type: ignore
         )
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["services"] = Service.objects.filter(
-            hairdresser=self.request.user.hairdresser_profile  # type: ignore
-        )
-        return context
 
     def form_valid(self, form):
         response = super().form_valid(form)
         messages.success(self.request, "Servicio actualizado exitosamente.")
         return response
 
+    def get(self, request, *args, **kwargs):
+        # Redirigir si se intenta acceder por GET
+        return redirect("my_hairdresser_services")
+
 
 class ServiceDeleteView(OwnerRequiredMixin, DeleteView):
     model = Service
-    template_name = "service_confirm_delete.html"
-    success_url = reverse_lazy("service_list")
+    success_url = reverse_lazy("my_hairdresser_services")
 
     def get_queryset(self):
         # CRÍTICO: Asegurar que un dueño no pueda borrar servicios de otro.
         return Service.objects.filter(
             hairdresser=self.request.user.hairdresser_profile  # type: ignore
         )
+
+    def form_valid(self, form):
+        # Añadir mensaje de éxito
+        messages.success(
+            self.request, f"El servicio '{self.object.name}' ha sido borrado."
+        )
+        return super().form_valid(form)
+
+    def get(self, request, *args, **kwargs):
+        return redirect("my_hairdresser_services")
 
 
 class HomeView(ListView):
@@ -300,54 +284,90 @@ def appointment_events_data(request, hairdresser_id):
     return JsonResponse(events, safe=False)
 
 
-class MyHairdresserView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
-    model = Hairdresser
-    form_class = HairdresserSetupForm
-    template_name = "my_hairdresser.html"
-    success_url = reverse_lazy("my_hairdresser")
+class MyHairdresserBaseMixin(LoginRequiredMixin, UserPassesTestMixin):
+    """
+    Mixin base que comprueba permisos y obtiene el objeto Hairdresser.
+    """
 
     def test_func(self):
-        if not self.request.user.is_authenticated:
-            return False
         return self.request.user.is_owner  # type: ignore
 
     def handle_no_permission(self):
         if not self.request.user.is_authenticated:
             return redirect("login")
-        messages.error(self.request, "Esta página es solo para dueños de peluquerías.")
+        messages.error(self.request, "No tienes permisos para acceder a esta página.")
         return redirect("home")
 
     def get_object(self, queryset=None):
-        # Try to get the existing hairdresser profile
         try:
             return self.request.user.hairdresser_profile  # type: ignore
         except Hairdresser.DoesNotExist:
-            # If it doesn't exist, create a new one
             return Hairdresser.objects.create(owner=self.request.user)  # type: ignore
+
+
+class MyHairdresserInfoView(MyHairdresserBaseMixin, UpdateView):
+    model = Hairdresser
+    form_class = HairdresserSetupForm
+    template_name = "my_hairdresser_info.html"
+    success_url = reverse_lazy("my_hairdresser_info")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        if self.request.POST:
-            context["working_hours_formset"] = WorkingHoursFormSet(
-                self.request.POST, instance=self.get_object()
-            )
-        else:
-            context["working_hours_formset"] = WorkingHoursFormSet(
-                instance=self.get_object()
-            )
+        context["active_tab"] = "info"
         return context
 
     def form_valid(self, form):
-        context = self.get_context_data()
-        working_hours_formset = context["working_hours_formset"]
+        messages.success(self.request, "La información general ha sido actualizada.")
+        return super().form_valid(form)
 
-        if form.is_valid() and working_hours_formset.is_valid():
-            self.object = form.save()
-            working_hours_formset.save()
-            messages.success(self.request, "Los cambios se han guardado correctamente.")
-            return redirect(self.success_url)
 
-        return self.render_to_response(context)
+class MyHairdresserHoursView(MyHairdresserBaseMixin, View):
+    template_name = "my_hairdresser_hours.html"
+
+    def get(self, request, *args, **kwargs):
+        hairdresser = self.get_object()
+        formset = WorkingHoursFormSet(instance=hairdresser)
+        return render(
+            request,
+            self.template_name,
+            {
+                "object": hairdresser,
+                "working_hours_formset": formset,
+                "active_tab": "hours",
+            },
+        )
+
+    def post(self, request, *args, **kwargs):
+        hairdresser = self.get_object()
+        formset = WorkingHoursFormSet(request.POST, instance=hairdresser)
+        if formset.is_valid():
+            formset.save()
+            messages.success(request, "Los horarios de atención han sido actualizados.")
+            return redirect("my_hairdresser_hours")
+
+        # Si no es válido, renderizar de nuevo con errores
+        return render(
+            request,
+            self.template_name,
+            {
+                "object": hairdresser,
+                "working_hours_formset": formset,
+                "active_tab": "hours",
+            },
+        )
+
+
+class MyHairdresserServicesView(MyHairdresserBaseMixin, DetailView):
+    model = Hairdresser
+    template_name = "my_hairdresser_services.html"
+    context_object_name = "hairdresser"  # Usamos 'hairdresser' en la plantilla
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_tab"] = "services"
+        context["services"] = Service.objects.filter(hairdresser=self.object)
+        context["service_form"] = ServiceForm()  # Para el modal de creación
+        return context
 
 
 class UserProfileView(LoginRequiredMixin, UpdateView):

@@ -1,0 +1,125 @@
+{% extends "my_hairdresser_base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Mi Peluquería{% endblock %}
+
+{% block tab_content %}
+<form method="post">
+  {% csrf_token %}
+  <div class="card border-0">
+    <div class="card-body p-0">
+      {{ form|crispy }}
+
+      <!-- Map -->
+      <div class="mb-3">
+        <label class="form-label">Ubicación en el mapa</label>
+        <div id="map" style="height: 350px; width: 100%;" class="mb-2 rounded"></div>
+        <div class="btn-group btn-group-sm" role="group">
+          <button type="button" id="use-current-location" class="btn btn-secondary">
+            <i class="bi bi-geo-alt-fill"></i> Usar mi ubicación actual
+          </button>
+          <button type="button" id="update-address-from-map" class="btn btn-info">
+            <i class="bi bi-arrow-clockwise"></i> Actualizar dirección desde el mapa
+          </button>
+        </div>
+        <small class="form-text text-muted d-block mt-1">
+          Haga clic en el mapa o arrastre el marcador para establecer las coordenadas.
+        </small>
+      </div>
+    </div>
+  </div>
+  <div class="text-end mt-4">
+    <button type="submit" class="btn btn-primary">Guardar</button>
+  </div>
+</form>
+{% endblock %}
+
+{% block tab_scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // --- MAPA ---
+  const latField = document.querySelector('#id_latitude');
+  const lonField = document.querySelector('#id_longitude');
+  const addressField = document.querySelector('#id_address');
+
+  if (document.getElementById('map') && latField && lonField && addressField) {
+    const latVal = "{{ object.latitude|default:'' }}".replace(',', '.');
+    const lonVal = "{{ object.longitude|default:'' }}".replace(',', '.');
+
+    const initialLat = latVal ? parseFloat(latVal) : -34.6037; // Fallback a Buenos Aires
+    const initialLon = lonVal ? parseFloat(lonVal) : -58.3816;
+    const hasInitialCoords = !!(latVal && lonVal);
+
+    const map = L.map('map').setView([initialLat, initialLon], hasInitialCoords ? 16 : 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    let marker;
+
+    function updateFormFields(lat, lon) {
+      latField.value = lat.toFixed(6);
+      lonField.value = lon.toFixed(6);
+    }
+
+    function reverseGeocode(lat, lon) {
+      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`;
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          if (data && data.display_name) {
+            addressField.value = data.display_name;
+          }
+        })
+        .catch(err => console.error("Error during reverse geocoding:", err));
+    }
+
+    function placeMarkerAndPan(lat, lon) {
+      if (!marker) {
+        marker = L.marker([lat, lon], { draggable: true }).addTo(map);
+        marker.on('dragend', function (event) {
+          const position = event.target.getLatLng();
+          updateFormFields(position.lat, position.lng);
+        });
+      } else {
+        marker.setLatLng([lat, lon]);
+      }
+      map.setView([lat, lon], 16);
+      updateFormFields(lat, lon);
+    }
+
+    if (hasInitialCoords) {
+      placeMarkerAndPan(initialLat, initialLon);
+    }
+
+    map.on('click', function (e) {
+      placeMarkerAndPan(e.latlng.lat, e.latlng.lng);
+    });
+
+    document.getElementById('use-current-location').addEventListener('click', function () {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function (position) {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          placeMarkerAndPan(lat, lon);
+        }, function () {
+          alert('No se pudo obtener la ubicación.');
+        });
+      } else {
+        alert('La geolocalización no es soportada por este navegador.');
+      }
+    });
+
+    document.getElementById('update-address-from-map').addEventListener('click', function() {
+      if (marker) {
+        const position = marker.getLatLng();
+        reverseGeocode(position.lat, position.lng);
+      } else {
+        alert('Por favor, primero marque una ubicación en el mapa.');
+      }
+    });
+  }
+});
+</script>
+{% endblock %}

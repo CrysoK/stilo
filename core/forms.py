@@ -1,5 +1,6 @@
 from django import forms
 from django.utils import timezone
+from django.forms import ValidationError
 from django.contrib.auth.forms import (
     UserCreationForm,
     AuthenticationForm,
@@ -117,66 +118,25 @@ class AppointmentForm(forms.ModelForm):
 class HairdresserSetupForm(forms.ModelForm):
     class Meta:
         model = Hairdresser
-        fields = ["name", "address", "phone_number", "description"]
+        fields = [
+            "name",
+            "address",
+            "phone_number",
+            "description",
+            "latitude",
+            "longitude",
+        ]
+        widgets = {
+            "latitude": forms.HiddenInput(),
+            "longitude": forms.HiddenInput(),
+        }
 
 
 class WorkingHoursForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["day_of_week"].widget.choices = WorkingHours.DAYS_OF_WEEK  # type: ignore
-        # Make day_of_week field initially empty
         self.fields["day_of_week"].initial = None
-
-    def clean(self):
-        # If the form is marked for deletion, skip validation entirely
-        if self.cleaned_data.get("DELETE"):
-            return self.cleaned_data
-
-        cleaned_data = super().clean()
-
-        # If either start_time or end_time is filled, both should be required
-        start_time = cleaned_data.get("start_time")
-        end_time = cleaned_data.get("end_time")
-
-        if start_time and not end_time:
-            self.add_error(
-                "end_time",
-                "Si especifica hora de inicio, debe especificar hora de fin.",
-            )
-        elif end_time and not start_time:
-            self.add_error(
-                "start_time",
-                "Si especifica hora de fin, debe especificar hora de inicio.",
-            )
-        if self.cleaned_data.get("DELETE"):
-            # Clear any errors that might have been added by super().clean()
-            self._errors = {}
-            return cleaned_data
-
-        start_time = cleaned_data.get("start_time")
-        end_time = cleaned_data.get("end_time")
-        day_of_week = cleaned_data.get("day_of_week")
-
-        if start_time and end_time and day_of_week:
-            # Check for overlapping hours on the same day
-            # Ensure self.instance exists and has a hairdresser
-            hairdresser_instance = None
-            if self.instance and hasattr(self.instance, "hairdresser"):
-                hairdresser_instance = self.instance.hairdresser
-
-            overlapping = WorkingHours.objects.filter(
-                hairdresser=hairdresser_instance, day_of_week=day_of_week
-            ).exclude(
-                pk=self.instance.pk if self.instance and self.instance.pk else None
-            )
-
-            for schedule in overlapping:
-                if start_time < schedule.end_time and end_time > schedule.start_time:
-                    raise forms.ValidationError(
-                        "Este horario se superpone con otro horario existente para el mismo día."
-                    )
-
-        return cleaned_data
 
     class Meta:
         model = WorkingHours
@@ -193,7 +153,34 @@ class WorkingHoursForm(forms.ModelForm):
 
 
 class BaseWorkingHoursFormSet(forms.BaseInlineFormSet):
-    pass
+    def clean(self):
+        super().clean()
+        # No continuar si hay errores de validación individuales (ej. desde model.clean())
+        if any(self.errors):
+            return
+        schedules = []
+        for form in self.forms:
+            if not form.has_changed() or (
+                self.can_delete and form.cleaned_data.get("DELETE")
+            ):
+                continue
+
+            cleaned_data = form.cleaned_data
+            start_time = cleaned_data.get("start_time")
+            end_time = cleaned_data.get("end_time")
+            day_of_week = cleaned_data.get("day_of_week")
+
+            if not all([start_time, end_time, day_of_week is not None]):
+                continue
+
+            # Comprobar si este horario se superpone con alguno ya procesado en este envío.
+            for day, start, end in schedules:
+                if day == day_of_week:
+                    if start_time < end and end_time > start:
+                        # Este error se mostrará en `non_form_errors` del formset.
+                        raise ValidationError("Los horarios no pueden superponerse.")
+
+            schedules.append((day_of_week, start_time, end_time))
 
 
 WorkingHoursFormSet = forms.inlineformset_factory(
@@ -201,7 +188,7 @@ WorkingHoursFormSet = forms.inlineformset_factory(
     WorkingHours,
     form=WorkingHoursForm,
     formset=BaseWorkingHoursFormSet,
-    extra=1,
+    extra=0,
     can_delete=True,
 )
 

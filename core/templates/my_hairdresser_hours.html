@@ -1,0 +1,256 @@
+{% extends "my_hairdresser_base.html" %}
+{% load crispy_forms_tags %}
+
+{% block tab_content %}
+<form method="post">
+  {% csrf_token %}
+  {{ working_hours_formset.management_form }}
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Día</th>
+          <th>Hora inicio</th>
+          <th>Hora fin</th>
+          <th style="width: 80px">Acciones</th>
+        </tr>
+      </thead>
+      <tbody data-formset-body>
+        {% for form in working_hours_formset %}
+        <tr data-formset-form>
+          <td>{{ form.day_of_week }}{% if form.day_of_week.errors %}<div class="invalid-feedback d-block">{% for error in form.day_of_week.errors %}{{ error }}{% endfor %}</div>{% endif %}<div style="display: none;">{{ form.id }}</div>{% if form.non_field_errors %}<div class="invalid-feedback d-block w-100 mb-2">{% for error in form.non_field_errors %}{{ error }}{% endfor %}</div>{% endif %}</td>
+          <td>{{ form.start_time }}{% if form.start_time.errors %}<div class="invalid-feedback d-block">{% for error in form.start_time.errors %}{{ error }}{% endfor %}</div>{% endif %}</td>
+          <td>{{ form.end_time }}{% if form.end_time.errors %}<div class="invalid-feedback d-block">{% for error in form.end_time.errors %}{{ error }}{% endfor %}</div>{% endif %}</td>
+          <td class="text-center"><div class="btn-group btn-group-sm">{% if form.instance.pk %}<button type="button" class="btn btn-outline-danger" data-formset-delete-button><i class="bi bi-trash"></i></button>{% else %}<button type="button" class="btn btn-outline-secondary" data-formset-remove-button><i class="bi bi-x-lg"></i></button>{% endif %}</div><div style="display: none;">{{ form.DELETE }}</div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <template id="formset-empty-template">
+        {% with form=working_hours_formset.empty_form %}
+        <tr data-formset-form>
+          <td>{{ form.day_of_week }}<div style="display: none;">{{ form.id }}</div></td>
+          <td>{{ form.start_time }}</td>
+          <td>{{ form.end_time }}</td>
+          <td class="text-center"><div class="btn-group btn-group-sm"><button type="button" class="btn btn-outline-secondary btn-sm" data-formset-remove-button><i class="bi bi-x-lg"></i></button></div><div style="display: none;">{{ form.DELETE }}</div></td>
+        </tr>
+        {% endwith %}
+      </template>
+    </table>
+  </div>
+  <div class="d-flex justify-content-end mb-3 gap-2">
+    <button type="button" class="btn btn-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#bulkHoursModal"><i class="bi bi-magic"></i> Asistente de horarios</button>
+    <button type="button" class="btn btn-primary btn-sm" data-formset-add><i class="bi bi-plus"></i> Agregar horario</button>
+  </div>
+  {% if working_hours_formset.non_form_errors %}<div class="alert alert-danger">{% for error in working_hours_formset.non_form_errors %}<p>{{ error }}</p>{% endfor %}</div>{% endif %}
+  <div class="text-muted small"><ul class="mb-0"><li>Puede agregar múltiples franjas horarias por día.</li><li>Los horarios no pueden superponerse en el mismo día.</li></ul></div>
+  <div class="text-end mt-4"><button type="submit" class="btn btn-primary">Guardar</button></div>
+</form>
+{% endblock %}
+
+{% block modals %}
+<!-- Modal del Asistente de Horarios -->
+<div class="modal fade" id="bulkHoursModal" tabindex="-1" aria-labelledby="bulkHoursModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="bulkHoursModalLabel">Asistente para generar horarios</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-bold">1. Selecciona los días</label>
+          <div id="bulk-days-selector">
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="checkbox" value="0" id="day-mon">
+              <label class="form-check-label" for="day-mon">Lun</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="checkbox" value="1" id="day-tue">
+              <label class="form-check-label" for="day-tue">Mar</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="checkbox" value="2" id="day-wed">
+              <label class="form-check-label" for="day-wed">Mié</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="checkbox" value="3" id="day-thu">
+              <label class="form-check-label" for="day-thu">Jue</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="checkbox" value="4" id="day-fri">
+              <label class="form-check-label" for="day-fri">Vie</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="checkbox" value="5" id="day-sat">
+              <label class="form-check-label" for="day-sat">Sáb</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="checkbox" value="6" id="day-sun">
+              <label class="form-check-label" for="day-sun">Dom</label>
+            </div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-bold">2. Define la franja horaria</label>
+          <div class="row">
+            <div class="col">
+              <label for="bulk-start-time" class="form-label">Hora inicio</label>
+              <input type="time" id="bulk-start-time" class="form-control" value="09:00">
+            </div>
+            <div class="col">
+              <label for="bulk-end-time" class="form-label">Hora fin</label>
+              <input type="time" id="bulk-end-time" class="form-control" value="18:00">
+            </div>
+          </div>
+        </div>
+        <div id="bulk-add-error" class="alert alert-danger d-none" role="alert"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="generate-bulk-hours">
+          <i class="bi bi-plus-circle"></i> Generar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block tab_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // --- FORMSET ---
+  const formsetContainer = document.querySelector('[data-formset-body]');
+  const addButton = document.querySelector('[data-formset-add]');
+  const totalFormsInput = document.querySelector('#id_working_hours-TOTAL_FORMS');
+  const template = document.querySelector('#formset-empty-template');
+  const prefix = 'working_hours';
+
+  function updateElementIndex(el, ndx) {
+    const pattern = new RegExp(prefix + '-(\\d+|__prefix__)-');
+    const replacement = prefix + '-' + ndx + '-';
+    if (el.id) el.id = el.id.replace(pattern, replacement);
+    if (el.name) el.name = el.name.replace(pattern, replacement);
+  }
+
+  function addDeleteHandler(row) {
+    const deleteButton = row.querySelector('[data-formset-delete-button]');
+    const removeButton = row.querySelector('[data-formset-remove-button]');
+    const deleteCheckbox = row.querySelector('input[id$="-DELETE"]');
+
+    if (deleteButton && deleteCheckbox) {
+      deleteButton.addEventListener('click', function (e) {
+        e.preventDefault();
+        deleteCheckbox.checked = !deleteCheckbox.checked;
+        row.classList.toggle('marked-for-deletion');
+        const icon = deleteButton.querySelector('i');
+        if (deleteCheckbox.checked) {
+          icon.classList.replace('bi-trash', 'bi-arrow-counterclockwise');
+          deleteButton.classList.replace('btn-outline-danger', 'btn-outline-warning');
+        } else {
+          icon.classList.replace('bi-arrow-counterclockwise', 'bi-trash');
+          deleteButton.classList.replace('btn-outline-warning', 'btn-outline-danger');
+        }
+      });
+    }
+
+    if (removeButton) {
+      removeButton.addEventListener('click', function (e) {
+        e.preventDefault();
+        row.remove();
+        // Al remover, debemos recalcular los índices de los formularios restantes
+        // para que la validación del backend funcione correctamente.
+        const forms = formsetContainer.querySelectorAll('[data-formset-form]');
+        totalFormsInput.value = forms.length;
+        forms.forEach((form, index) => {
+            form.querySelectorAll('input, select').forEach(el => {
+                updateElementIndex(el, index);
+            });
+        });
+      });
+    }
+  }
+
+  // Adjuntar manejadores a las filas existentes
+  document.querySelectorAll('[data-formset-form]').forEach(addDeleteHandler);
+
+  // Función reutilizable para agregar una nueva fila al formset
+  function addFormsetRow(initialData = {}) {
+    if (!totalFormsInput || !formsetContainer || !template) return;
+
+    const formCount = parseInt(totalFormsInput.value);
+    // Clonar el contenido de la etiqueta <template>
+    const newRow = template.content.cloneNode(true).firstElementChild;
+
+    // Actualizar índices y limpiar valores
+    newRow.querySelectorAll('input, select').forEach(element => {
+      updateElementIndex(element, formCount);
+      
+      const fieldName = element.name.split('-').pop();
+      if (initialData[fieldName]) {
+        element.value = initialData[fieldName];
+      } else if (element.name.endsWith('-DELETE')) {
+        element.checked = false;
+      } else if (element.tagName === 'SELECT') {
+         // Para `empty_form` no necesitamos limpiar, pero es bueno tenerlo
+        element.selectedIndex = -1;
+      } else if (element.type !== 'hidden') {
+        element.value = '';
+      }
+    });
+
+    addDeleteHandler(newRow);
+    formsetContainer.appendChild(newRow);
+    totalFormsInput.value = formCount + 1;
+  }
+
+  // Manejador para el botón de "Agregar horario"
+  if (addButton) {
+    addButton.addEventListener('click', function (e) {
+      e.preventDefault();
+      addFormsetRow();
+    });
+  }
+  
+  // --- ASISTENTE DE HORARIOS ---
+  const bulkAddBtn = document.getElementById('generate-bulk-hours');
+  const bulkModalEl = document.getElementById('bulkHoursModal');
+  
+  if (bulkAddBtn && bulkModalEl) {
+    const bulkModal = new bootstrap.Modal(bulkModalEl);
+    const errorDiv = document.getElementById('bulk-add-error');
+
+    bulkAddBtn.addEventListener('click', function() {
+        const selectedDays = document.querySelectorAll('#bulk-days-selector .form-check-input:checked');
+        const startTime = document.getElementById('bulk-start-time').value;
+        const endTime = document.getElementById('bulk-end-time').value;
+
+        // Validación simple
+        if (selectedDays.length === 0) {
+            errorDiv.textContent = 'Debe seleccionar al menos un día.';
+            errorDiv.classList.remove('d-none');
+            return;
+        }
+        if (!startTime || !endTime) {
+            errorDiv.textContent = 'Debe especificar una hora de inicio y fin.';
+            errorDiv.classList.remove('d-none');
+            return;
+        }
+        errorDiv.classList.add('d-none');
+
+        // Generar las filas
+        selectedDays.forEach(checkbox => {
+            addFormsetRow({
+                'day_of_week': checkbox.value,
+                'start_time': startTime,
+                'end_time': endTime
+            });
+        });
+
+        // Cerrar el modal
+        bulkModal.hide();
+    });
+  }
+});
+</script>
+{% endblock %}
