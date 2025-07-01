@@ -15,6 +15,13 @@ class UserProfileForm(forms.ModelForm):
 
 
 class ServiceForm(forms.ModelForm):
+    name = forms.CharField(label="Nombre")
+    description = forms.CharField(
+        label="Descripción", required=False, widget=forms.Textarea(attrs={"rows": 3})
+    )
+    price = forms.DecimalField(label="Precio")
+    duration_minutes = forms.IntegerField(label="Duración (minutos)")
+
     class Meta:
         model = Service
         fields = ["name", "description", "price", "duration_minutes"]

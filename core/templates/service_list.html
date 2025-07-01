@@ -1,11 +1,14 @@
 {% extends "base.html" %}
+{% load crispy_forms_tags %}
 
-{% block title %}Mis Servicios{% endblock %}
+{% block title %}Mis servicios{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h2>Mis Servicios</h2>
-  <a href="{% url 'service_create' %}" class="btn btn-primary">Añadir Nuevo Servicio</a>
+  <h2>Mis servicios</h2>
+  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#serviceFormModal" data-mode="create">
+    Añadir nuevo servicio
+  </button>
 </div>
 
 {% include 'includes/hairdresser_incomplete_warning.html' %}
@@ -17,12 +20,128 @@
       <strong>{{ service.name }}</strong> - ${{ service.price }} ({{ service.duration_minutes }} min)
     </div>
     <div>
-      <a href="{% url 'service_update' service.pk %}" class="btn btn-secondary btn-sm">Editar</a>
-      <a href="{% url 'service_delete' service.pk %}" class="btn btn-danger btn-sm">Borrar</a>
+      <button type="button" class="btn btn-secondary btn-sm" data-bs-toggle="modal" 
+              data-bs-target="#serviceFormModal" data-mode="edit" 
+              data-service-id="{{ service.pk }}">
+        Editar
+      </button>
+      <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" 
+              data-bs-target="#deleteServiceModal" data-service-id="{{ service.pk }}"
+              data-service-name="{{ service.name }}">
+        Borrar
+      </button>
     </div>
   </li>
   {% empty %}
   <li class="list-group-item">Aún no has añadido ningún servicio.</li>
   {% endfor %}
 </ul>
+
+<!-- Service Form Modal -->
+<div class="modal fade" id="serviceFormModal" tabindex="-1" aria-labelledby="serviceFormModalLabel" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="serviceFormModalLabel">Crear nuevo servicio</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form method="post" id="serviceForm">
+          {% csrf_token %}
+          {{ form|crispy }}
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-success">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteServiceModal" tabindex="-1" aria-labelledby="deleteServiceModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deleteServiceModalLabel">Confirmar borrado</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Estás a punto de borrar el servicio: <strong id="serviceNameToDelete"></strong></p>
+        <p>Esta acción no se puede deshacer.</p>
+        <form method="post" id="deleteServiceForm">
+          {% csrf_token %}
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-danger">Sí, borrar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Service Form Modal
+  const serviceFormModal = document.getElementById('serviceFormModal');
+  serviceFormModal.addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    const mode = button.getAttribute('data-mode');
+    const modalTitle = this.querySelector('.modal-title');
+    const form = this.querySelector('#serviceForm');
+    const nameInput = form.querySelector('[name="name"]');
+    const descriptionInput = form.querySelector('[name="description"]');
+    const priceInput = form.querySelector('[name="price"]');
+    const durationInput = form.querySelector('[name="duration_minutes"]');
+    
+    // Reset form
+    form.reset();
+    
+    if (mode === 'create') {
+      modalTitle.textContent = 'Crear nuevo servicio';
+      form.action = "{% url 'service_create' %}";
+    } else if (mode === 'edit') {
+      const serviceId = button.getAttribute('data-service-id');
+      modalTitle.textContent = 'Editar servicio';
+      form.action = `{% url 'service_update' 0 %}`.replace('0', serviceId);
+      
+      // Get all service data from API
+      fetch(`{% url 'service_detail' 0 %}`.replace('0', serviceId))
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Error al obtener datos del servicio');
+          }
+          return response.json();
+        })
+        .then(data => {
+          nameInput.value = data.name;
+          priceInput.value = data.price;
+          durationInput.value = data.duration_minutes;
+          descriptionInput.value = data.description || '';
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          messages.error('Error al cargar los datos del servicio');
+        });
+    }
+  });
+
+  // Delete Modal
+  const deleteModal = document.getElementById('deleteServiceModal');
+  deleteModal.addEventListener('show.bs.modal', function(event) {
+    const button = event.relatedTarget;
+    const serviceId = button.getAttribute('data-service-id');
+    const serviceName = button.getAttribute('data-service-name');
+    const form = this.querySelector('#deleteServiceForm');
+    const serviceNameSpan = this.querySelector('#serviceNameToDelete');
+    
+    form.action = `{% url 'service_delete' 0 %}`.replace('0', serviceId);
+    serviceNameSpan.textContent = serviceName;
+  });
+});
+</script>
 {% endblock %}

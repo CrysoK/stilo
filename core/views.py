@@ -25,6 +25,7 @@ from .forms import (
     WorkingHoursFormSet,
     UserProfileForm,
     CustomPasswordChangeForm,
+    ServiceForm,
 )
 from .models import Appointment, Hairdresser, Service, User
 from .utils import get_location_from_ip
@@ -62,6 +63,7 @@ class ServiceListView(OwnerRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["hairdresser"] = self.request.user.hairdresser_profile  # type: ignore
+        context["form"] = ServiceForm()  # Add the form to the context
         return context
 
     def get_queryset(self):
@@ -73,27 +75,46 @@ class ServiceListView(OwnerRequiredMixin, ListView):
 
 class ServiceCreateView(OwnerRequiredMixin, CreateView):
     model = Service
-    fields = ["name", "description", "price", "duration_minutes"]
-    template_name = "service_form.html"
+    form_class = ServiceForm
+    template_name = "service_list.html"
     success_url = reverse_lazy("service_list")
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["services"] = Service.objects.filter(
+            hairdresser=self.request.user.hairdresser_profile  # type: ignore
+        )
+        return context
+
     def form_valid(self, form):
-        # CRÍTICO: Asignar el servicio a la peluquería del dueño logueado
         form.instance.hairdresser = self.request.user.hairdresser_profile  # type: ignore
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        messages.success(self.request, "Servicio creado exitosamente.")
+        return response
 
 
 class ServiceUpdateView(OwnerRequiredMixin, UpdateView):
     model = Service
-    fields = ["name", "description", "price", "duration_minutes"]
-    template_name = "service_form.html"
+    form_class = ServiceForm
+    template_name = "service_list.html"
     success_url = reverse_lazy("service_list")
 
     def get_queryset(self):
-        # CRÍTICO: Asegurar que un dueño no pueda editar servicios de otro.
         return Service.objects.filter(
             hairdresser=self.request.user.hairdresser_profile  # type: ignore
         )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["services"] = Service.objects.filter(
+            hairdresser=self.request.user.hairdresser_profile  # type: ignore
+        )
+        return context
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        messages.success(self.request, "Servicio actualizado exitosamente.")
+        return response
 
 
 class ServiceDeleteView(OwnerRequiredMixin, DeleteView):
@@ -292,9 +313,9 @@ class MyHairdresserView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
 
     def handle_no_permission(self):
         if not self.request.user.is_authenticated:
-            return redirect('login')
+            return redirect("login")
         messages.error(self.request, "Esta página es solo para dueños de peluquerías.")
-        return redirect('home')
+        return redirect("home")
 
     def get_object(self, queryset=None):
         # Try to get the existing hairdresser profile
@@ -318,14 +339,14 @@ class MyHairdresserView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
 
     def form_valid(self, form):
         context = self.get_context_data()
-        working_hours_formset = context['working_hours_formset']
-        
+        working_hours_formset = context["working_hours_formset"]
+
         if form.is_valid() and working_hours_formset.is_valid():
             self.object = form.save()
             working_hours_formset.save()
             messages.success(self.request, "Los cambios se han guardado correctamente.")
             return redirect(self.success_url)
-            
+
         return self.render_to_response(context)
 
 
@@ -345,10 +366,27 @@ class UserProfileView(LoginRequiredMixin, UpdateView):
 
 
 class CustomPasswordChangeView(LoginRequiredMixin, PasswordChangeView):
-    template_name = 'password_change.html'
+    template_name = "password_change.html"
     form_class = CustomPasswordChangeForm
-    success_url = reverse_lazy('user_profile')
+    success_url = reverse_lazy("user_profile")
 
     def form_valid(self, form):
         messages.success(self.request, "Tu contraseña ha sido cambiada exitosamente.")
         return super().form_valid(form)
+
+
+def get_service_detail(request, pk):
+    if not request.user.is_authenticated or not request.user.is_owner:
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+
+    service = get_object_or_404(
+        Service, pk=pk, hairdresser=request.user.hairdresser_profile
+    )
+    return JsonResponse(
+        {
+            "name": service.name,
+            "price": str(service.price),
+            "duration_minutes": service.duration_minutes,
+            "description": service.description,
+        }
+    )

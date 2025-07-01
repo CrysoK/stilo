@@ -18,6 +18,7 @@ from .views import (
     MyHairdresserView,
     UserProfileView,
     CustomPasswordChangeView,
+    get_service_detail,
 )
 
 urlpatterns = [
@@ -46,7 +47,9 @@ urlpatterns = [
     ),
     path("my-appointments/", AppointmentListView.as_view(), name="my_appointments"),
     path("profile/", UserProfileView.as_view(), name="user_profile"),
-    path("profile/password/", CustomPasswordChangeView.as_view(), name="password_change"),
+    path(
+        "profile/password/", CustomPasswordChangeView.as_view(), name="password_change"
+    ),
     # URLs de la API
     path("api/map-data/", hairdresser_map_data, name="map_data"),
     path("api/earnings-chart/", earnings_chart_data, name="earnings_chart_data"),
@@ -55,4 +58,5 @@ urlpatterns = [
         appointment_events_data,
         name="appointment_events",
     ),
+    path("api/services/<int:pk>/", get_service_detail, name="service_detail"),
 ]
