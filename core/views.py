@@ -131,9 +131,9 @@ class ServiceDeleteView(OwnerRequiredMixin, DeleteView):
     def form_valid(self, form):
         # Añadir mensaje de éxito
         messages.success(
-            self.request, f"El servicio '{self.object.name}' ha sido borrado."
+            self.request, f"El servicio '{self.object.name}' ha sido borrado."  # type: ignore
         )
-        return super().form_valid(form)
+        return super().form_valid(form)  # type: ignore
 
     def get(self, request, *args, **kwargs):
         return redirect("my_hairdresser_services")
@@ -188,7 +188,7 @@ class HairdresserDetailView(DetailView):
             all_images.remove(hairdresser.cover_image)  # type: ignore
             all_images.insert(0, hairdresser.cover_image)  # type: ignore
         context["ordered_images"] = all_images
-        context["services"] = hairdresser.services.all() # type: ignore
+        context["services"] = hairdresser.services.all()  # type: ignore
         # Pasamos el formulario a la plantilla
         context["form"] = AppointmentForm(hairdresser=hairdresser)
         return context
@@ -327,10 +327,10 @@ class MyHairdresserBaseMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         return self.request.user.is_owner  # type: ignore
 
-    def handle_no_permission(self):
-        if not self.request.user.is_authenticated:
+    def handle_no_permission(self):  # type: ignore
+        if not self.request.user.is_authenticated:  # type: ignore
             return redirect("login")
-        messages.error(self.request, "No tienes permisos para acceder a esta página.")
+        messages.error(self.request, "No tienes permisos para acceder a esta página.")  # type: ignore
         return redirect("home")
 
     def get_object(self, queryset=None):
@@ -402,7 +402,7 @@ class MyHairdresserServicesView(
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_tab"] = "services"
-        context["services"] = Service.objects.filter(hairdresser=self.object)
+        context["services"] = Service.objects.filter(hairdresser=self.object)  # type: ignore
         context["service_form"] = ServiceForm()  # Para el modal de creación
         return context
 
@@ -475,7 +475,7 @@ class HairdresserImageDeleteView(OwnerRequiredMixin, DeleteView):
             hairdresser.save()
 
         messages.success(self.request, "La imagen ha sido borrada.")
-        return super().form_valid(form)
+        return super().form_valid(form)  # type: ignore
 
     def get(self, request, *args, **kwargs):
         # No permitir peticiones GET
@@ -507,9 +507,9 @@ class UserProfileView(LoginRequiredMixin, UpdateView):
     template_name = "user_profile.html"
     success_url = reverse_lazy("user_profile")
 
-    def get_object(self, queryset=None):
+    def get_object(self, queryset=None):  # type: ignore
         # We know this is a User model instance because of LoginRequiredMixin
-        return self.request.user  # type: ignore[return-value]
+        return self.request.user
 
     def form_valid(self, form):
         messages.success(self.request, "Tu perfil ha sido actualizado exitosamente.")
