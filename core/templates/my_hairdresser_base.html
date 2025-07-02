@@ -49,6 +49,11 @@
         <i class="bi bi-scissors"></i> Servicios
       </a>
     </li>
+    <li class="nav-item" role="presentation">
+      <a class="nav-link {% if active_tab == 'images' %}active{% endif %}" href="{% url 'my_hairdresser_images' %}">
+        <i class="bi bi-images"></i> Imágenes
+      </a>
+    </li>
   </ul>
 
   <!-- Contenido de la pestaña activa -->

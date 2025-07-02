@@ -19,6 +19,8 @@ from django.views.generic import (
 )
 
 from .forms import (
+    HairdresserImageForm,
+    HairdresserImageUpdateForm,
     SignUpForm,
     AppointmentForm,
     LoginForm,
@@ -28,7 +30,7 @@ from .forms import (
     CustomPasswordChangeForm,
     ServiceForm,
 )
-from .models import Appointment, Hairdresser, Service, User
+from .models import Appointment, Hairdresser, Service, User, HairdresserImage
 from .utils import get_location_from_ip
 
 # Create your views here.
@@ -50,10 +52,34 @@ class CustomLoginView(LoginView):
     form_class = LoginForm
 
 
-# Este Mixin verifica que el usuario sea 'owner' Y que tenga un perfil de peluquería
 class OwnerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
+    """
+    Mixin que solo verifica que el usuario sea un 'owner' autenticado.
+    """
+
     def test_func(self):
         return self.request.user.is_owner  # type: ignore
+
+    def handle_no_permission(self):  # type: ignore
+        if not self.request.user.is_authenticated:  # type: ignore
+            return redirect("login")
+        messages.error(self.request, "No tienes permisos para acceder a esta página.")  # type: ignore
+        return redirect("home")
+
+
+class CurrentHairdresserMixin:
+    """
+    Mixin que proporciona un get_object que devuelve la peluquería
+    del usuario actual, creándola si no existe.
+    """
+
+    def get_object(self, queryset=None):
+        try:
+            # El owner se obtiene del usuario de la sesión
+            return self.request.user.hairdresser_profile  # type: ignore
+        except Hairdresser.DoesNotExist:
+            # Si un owner llega aquí sin perfil, se lo creamos
+            return Hairdresser.objects.create(owner=self.request.user)  # type: ignore
 
 
 class ServiceCreateView(OwnerRequiredMixin, CreateView):
@@ -150,10 +176,19 @@ class HairdresserDetailView(DetailView):
     template_name = "hairdresser_detail.html"
     context_object_name = "hairdresser"
 
+    def get_queryset(self):
+        # Prefetch images y services para eficiencia
+        return super().get_queryset().prefetch_related("images", "services")
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         hairdresser = self.get_object()
-        context["services"] = Service.objects.filter(hairdresser=hairdresser)
+        all_images = list(hairdresser.images.all())  # type: ignore
+        if hairdresser.cover_image and hairdresser.cover_image in all_images:  # type: ignore
+            all_images.remove(hairdresser.cover_image)  # type: ignore
+            all_images.insert(0, hairdresser.cover_image)  # type: ignore
+        context["ordered_images"] = all_images
+        context["services"] = hairdresser.services.all() # type: ignore
         # Pasamos el formulario a la plantilla
         context["form"] = AppointmentForm(hairdresser=hairdresser)
         return context
@@ -305,7 +340,7 @@ class MyHairdresserBaseMixin(LoginRequiredMixin, UserPassesTestMixin):
             return Hairdresser.objects.create(owner=self.request.user)  # type: ignore
 
 
-class MyHairdresserInfoView(MyHairdresserBaseMixin, UpdateView):
+class MyHairdresserInfoView(OwnerRequiredMixin, CurrentHairdresserMixin, UpdateView):
     model = Hairdresser
     form_class = HairdresserSetupForm
     template_name = "my_hairdresser_info.html"
@@ -321,7 +356,7 @@ class MyHairdresserInfoView(MyHairdresserBaseMixin, UpdateView):
         return super().form_valid(form)
 
 
-class MyHairdresserHoursView(MyHairdresserBaseMixin, View):
+class MyHairdresserHoursView(OwnerRequiredMixin, CurrentHairdresserMixin, View):
     template_name = "my_hairdresser_hours.html"
 
     def get(self, request, *args, **kwargs):
@@ -357,7 +392,9 @@ class MyHairdresserHoursView(MyHairdresserBaseMixin, View):
         )
 
 
-class MyHairdresserServicesView(MyHairdresserBaseMixin, DetailView):
+class MyHairdresserServicesView(
+    OwnerRequiredMixin, CurrentHairdresserMixin, DetailView
+):
     model = Hairdresser
     template_name = "my_hairdresser_services.html"
     context_object_name = "hairdresser"  # Usamos 'hairdresser' en la plantilla
@@ -368,6 +405,100 @@ class MyHairdresserServicesView(MyHairdresserBaseMixin, DetailView):
         context["services"] = Service.objects.filter(hairdresser=self.object)
         context["service_form"] = ServiceForm()  # Para el modal de creación
         return context
+
+
+class MyHairdresserImagesView(OwnerRequiredMixin, CurrentHairdresserMixin, View):
+    template_name = "my_hairdresser_images.html"
+
+    def get(self, request, *args, **kwargs):
+        hairdresser = self.get_object()
+        images = HairdresserImage.objects.filter(hairdresser=hairdresser)
+        upload_form = HairdresserImageForm()
+        update_form = HairdresserImageUpdateForm()
+        return render(
+            request,
+            self.template_name,
+            {
+                "object": hairdresser,
+                "images": images,
+                "upload_form": upload_form,
+                "update_form": update_form,
+                "active_tab": "images",
+            },
+        )
+
+    def post(self, request, *args, **kwargs):
+        hairdresser = self.get_object()
+        action = request.POST.get("action")
+
+        if action == "upload":
+            form = HairdresserImageForm(request.POST, request.FILES)
+            if form.is_valid():
+                image = form.save(commit=False)
+                image.hairdresser = hairdresser
+                image.save()
+                messages.success(request, "Imagen subida exitosamente.")
+            else:
+                messages.error(
+                    request, "Error al subir la imagen. Verifique el archivo."
+                )
+        elif action == "update":
+            image_pk = request.POST.get("image_pk")
+            image_instance = get_object_or_404(
+                HairdresserImage, pk=image_pk, hairdresser=hairdresser
+            )
+            form = HairdresserImageUpdateForm(request.POST, instance=image_instance)
+            if form.is_valid():
+                form.save()
+                messages.success(
+                    request, "La descripción de la imagen ha sido actualizada."
+                )
+            else:
+                messages.error(request, "Error al actualizar la descripción.")
+
+        return redirect("my_hairdresser_images")
+
+
+class HairdresserImageDeleteView(OwnerRequiredMixin, DeleteView):
+    model = HairdresserImage
+    success_url = reverse_lazy("my_hairdresser_images")
+    # Esta vista será solo para POST, por lo que no se necesita plantilla.
+
+    def get_queryset(self):
+        # Asegurarse de que el dueño solo puede borrar sus propias imágenes
+        return HairdresserImage.objects.filter(hairdresser=self.request.user.hairdresser_profile)  # type: ignore
+
+    def form_valid(self, form):
+        hairdresser = self.request.user.hairdresser_profile  # type: ignore
+        if hairdresser.cover_image == self.object:  # type: ignore
+            hairdresser.cover_image = None
+            hairdresser.save()
+
+        messages.success(self.request, "La imagen ha sido borrada.")
+        return super().form_valid(form)
+
+    def get(self, request, *args, **kwargs):
+        # No permitir peticiones GET
+        return redirect(self.success_url)
+
+
+class SetCoverImageView(OwnerRequiredMixin, CurrentHairdresserMixin, View):
+    def post(self, request, *args, **kwargs):
+        hairdresser = self.get_object()
+        image_pk = kwargs.get("pk")
+
+        # Asegurarnos de que la imagen pertenece a la peluquería del usuario
+        image_to_set = get_object_or_404(
+            HairdresserImage, pk=image_pk, hairdresser=hairdresser
+        )
+
+        hairdresser.cover_image = image_to_set  # type: ignore
+        hairdresser.save()
+        messages.success(request, f"La imagen ha sido establecida como portada.")
+        return redirect("my_hairdresser_images")
+
+    def get(self, request, *args, **kwargs):
+        return redirect("my_hairdresser_images")
 
 
 class UserProfileView(LoginRequiredMixin, UpdateView):

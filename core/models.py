@@ -42,6 +42,14 @@ class Hairdresser(models.Model):
     latitude = models.FloatField(blank=True, null=True, verbose_name="Latitud")
     longitude = models.FloatField(blank=True, null=True, verbose_name="Longitud")
     created_at = models.DateTimeField(auto_now_add=True)
+    cover_image = models.ForeignKey(
+        "HairdresserImage",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="La imagen que se mostrará como principal.",
+    )
 
     def __str__(self):
         return self.name

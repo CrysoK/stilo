@@ -1,0 +1,150 @@
+{% extends "my_hairdresser_base.html" %}
+{% load crispy_forms_tags %}
+
+{% block tab_content %}
+<div class="row">
+  <!-- Formulario para subir nueva imagen -->
+  <div class="col-lg-4">
+    <h4>Subir nueva imagen</h4>
+    <form method="post" action="{% url 'my_hairdresser_images' %}" enctype="multipart/form-data">
+      {% csrf_token %}
+      {{ upload_form|crispy }}
+      <button type="submit" name="action" value="upload" class="btn btn-primary mt-3"><i class="bi bi-upload"></i> Subir</button>
+    </form>
+  </div>
+
+  <!-- Galería de imágenes existentes -->
+  <div class="col-lg-8">
+    <h4>Imágenes actuales</h4>
+    <div class="row row-cols-1 row-cols-md-2 g-4">
+      {% for image in images %}
+      <div class="col">
+        <div class="card h-100">
+          <div class="position-relative">
+            <img src="{{ image.image.url }}" class="card-img-top" alt="{{ image.caption|default:'Imagen de la peluquería' }}" style="height: 180px; object-fit: cover;">
+            {% if image == object.cover_image %}
+              <span class="badge bg-success position-absolute top-0 start-0 m-2"><i class="bi bi-star-fill"></i> Portada</span>
+            {% endif %}
+          </div>
+          <div class="card-body">
+            <p class="card-text">{{ image.caption|default:"Sin descripción" }}</p>
+          </div>
+          <div class="card-footer bg-transparent border-top-0">
+            <div class="btn-toolbar justify-content-between" role="toolbar">
+              <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editImageModal" data-image-id="{{ image.pk }}" data-image-caption="{{ image.caption|default:'' }}">
+                  <i class="bi bi-pencil"></i> Editar
+                </button>
+                <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteImageModal" data-image-delete-url="{% url 'hairdresser_image_delete' image.pk %}" data-image-name="{{ image.image.name|cut:'hairdressers/' }}">
+                    <i class="bi bi-trash"></i> Borrar
+                </button>
+              </div>
+              <div class="btn-group btn-group-sm" role="group">
+                {% if image != object.cover_image %}
+                <form action="{% url 'set_cover_image' image.pk %}" method="post" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-primary">
+                      <i class="bi bi-star"></i> Usar como portada
+                    </button>
+                </form>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% empty %}
+      <div class="col-12">
+        <p>Aún no has subido ninguna imagen</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+<!-- Modal para editar descripción de imagen -->
+<div class="modal fade" id="editImageModal" tabindex="-1" aria-labelledby="editImageModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editImageModalLabel">Editar descripción de la imagen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="editImageForm" method="post" action="{% url 'my_hairdresser_images' %}">
+        {% csrf_token %}
+        <input type="hidden" name="image_pk" id="editImagePk">
+        <div class="modal-body">
+          {{ update_form|crispy }}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" name="action" value="update" class="btn btn-primary">Guardar cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para confirmar borrado de imagen -->
+<div class="modal fade" id="deleteImageModal" tabindex="-1" aria-labelledby="deleteImageModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteImageModalLabel">Confirmar borrado</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Estás seguro de que quieres borrar la imagen <strong id="imageNameToDelete"></strong>?</p>
+                <p class="text-danger">Esta acción no se puede deshacer.</p>
+            </div>
+            <div class="modal-footer">
+                <form id="deleteImageForm" method="post">
+                    {% csrf_token %}
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-danger">Sí, borrar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block tab_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Modal para editar
+  const editImageModal = document.getElementById('editImageModal');
+  if (editImageModal) {
+    editImageModal.addEventListener('show.bs.modal', function(event) {
+      const button = event.relatedTarget;
+      const imageId = button.getAttribute('data-image-id');
+      const imageCaption = button.getAttribute('data-image-caption');
+      
+      const pkInput = editImageModal.querySelector('#editImagePk');
+      const captionInput = editImageModal.querySelector('[name="caption"]');
+      
+      pkInput.value = imageId;
+      captionInput.value = imageCaption;
+    });
+  }
+
+  // Modal para borrar
+  const deleteImageModal = document.getElementById('deleteImageModal');
+  if (deleteImageModal) {
+      deleteImageModal.addEventListener('show.bs.modal', function(event) {
+          const button = event.relatedTarget;
+          const deleteUrl = button.getAttribute('data-image-delete-url');
+          const imageName = button.getAttribute('data-image-name');
+
+          const form = deleteImageModal.querySelector('#deleteImageForm');
+          const imageNameSpan = deleteImageModal.querySelector('#imageNameToDelete');
+          
+          form.action = deleteUrl;
+          imageNameSpan.textContent = imageName;
+      });
+  }
+});
+</script>
+{% endblock %}

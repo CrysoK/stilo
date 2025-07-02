@@ -6,7 +6,14 @@ from django.contrib.auth.forms import (
     AuthenticationForm,
     PasswordChangeForm,
 )
-from .models import User, Hairdresser, Appointment, Service, WorkingHours
+from .models import (
+    HairdresserImage,
+    User,
+    Hairdresser,
+    Appointment,
+    Service,
+    WorkingHours,
+)
 
 
 class UserProfileForm(forms.ModelForm):
@@ -26,6 +33,21 @@ class ServiceForm(forms.ModelForm):
     class Meta:
         model = Service
         fields = ["name", "description", "price", "duration_minutes"]
+
+
+class HairdresserImageForm(forms.ModelForm):
+    class Meta:
+        model = HairdresserImage
+        fields = ["image", "caption"]
+        labels = {"image": "Archivo de imagen", "caption": "Descripción (opcional)"}
+
+
+class HairdresserImageUpdateForm(forms.ModelForm):
+    class Meta:
+        model = HairdresserImage
+        fields = ["caption"]
+        labels = {"caption": "Descripción"}
+        widgets = {"caption": forms.Textarea(attrs={"rows": 2})}
 
 
 class LoginForm(AuthenticationForm):

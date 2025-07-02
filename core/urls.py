@@ -17,6 +17,9 @@ from .views import (
     MyHairdresserInfoView,
     MyHairdresserHoursView,
     MyHairdresserServicesView,
+    MyHairdresserImagesView,
+    SetCoverImageView,
+    HairdresserImageDeleteView,
     UserProfileView,
     CustomPasswordChangeView,
     get_service_detail,
@@ -49,6 +52,21 @@ urlpatterns = [
         "my-hairdresser/services/",
         MyHairdresserServicesView.as_view(),
         name="my_hairdresser_services",
+    ),
+    path(
+        "my-hairdresser/images/",
+        MyHairdresserImagesView.as_view(),
+        name="my_hairdresser_images",
+    ),
+    path(
+        "my-hairdresser/images/<int:pk>/delete/",
+        HairdresserImageDeleteView.as_view(),
+        name="hairdresser_image_delete",
+    ),
+    path(
+        "my-hairdresser/images/<int:pk>/set-cover/",
+        SetCoverImageView.as_view(),
+        name="set_cover_image",
     ),
     path("my-services/new/", ServiceCreateView.as_view(), name="service_create"),
     path(
