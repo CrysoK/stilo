@@ -1,0 +1,17 @@
+{% comment %}
+  Muestra una calificación con estrellas (de 1 a 5).
+  Uso: {% include 'includes/star_rating.html' with rating=some_rating_value %}
+  - `rating`: El valor numérico de la calificación (e.j. 4.5).
+  - El color y tamaño se heredan del contexto, o se puede usar la clase 'text-warning'.
+{% endcomment %}
+{% with rating_value=rating|default:0 %}
+  {% for i in "12345" %}
+    {% if rating_value >= i|add:0 %}
+      <i class="bi bi-star-fill text-warning"></i>
+    {% elif rating_value > i|add:"-0.5" %}
+      <i class="bi bi-star-half text-warning"></i>
+    {% else %}
+      <i class="bi bi-star text-warning"></i>
+    {% endif %}
+  {% endfor %}
+{% endwith %}

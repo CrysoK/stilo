@@ -95,13 +95,7 @@
                   {% with service_rating=service.average_rating service_review_count=service.review_count %}
                     {% if service_review_count > 0 %}
                     <small class="text-muted d-block">
-                        {% for i in "12345" %}
-                            {% if i|add:0 <= service_rating %}
-                                <i class="bi bi-star-fill text-warning"></i>
-                            {% else %}
-                                <i class="bi bi-star text-warning"></i>
-                            {% endif %}
-                        {% endfor %}
+                        {% include 'includes/star_rating.html' with rating=service_rating %}
                         ({{ service_review_count }})
                     </small>
                     {% endif %}

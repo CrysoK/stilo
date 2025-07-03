@@ -56,13 +56,7 @@
                     <div class="text-muted text-end">
                         <small>Tu calificación:</small><br>
                         <div class="review-stars-display" id="stars-for-review-{{ app.review.pk }}">
-                            {% for i in "12345" %}
-                                {% if i|add:"0" <= app.review.rating %}
-                                    <i class="bi bi-star-fill text-warning"></i>
-                                {% else %}
-                                    <i class="bi bi-star text-warning"></i>
-                                {% endif %}
-                            {% endfor %}
+                            {% include 'includes/star_rating.html' with rating=app.review.rating %}
                         </div>
                         <div class="mt-2">
                              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal"
