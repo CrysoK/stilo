@@ -114,7 +114,7 @@ class Service(models.Model):
 
     def review_count(self):
         """Cuenta el número de reseñas para este servicio."""
-        return self.appointments.filter(review__isnull=False).count() # type: ignore
+        return self.appointments.filter(review__isnull=False).count()  # type: ignore
 
 
 class Appointment(models.Model):
@@ -127,6 +127,7 @@ class Appointment(models.Model):
         ("CONFIRMED", "Confirmado"),
         ("COMPLETED", "Completado"),
         ("CANCELLED", "Cancelado"),
+        ("NO_SHOW", "No se presentó"),
     ]
     client = models.ForeignKey(
         settings.AUTH_USER_MODEL,

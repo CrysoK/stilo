@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Hoy{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">Agenda del día - {{ hairdresser.name }}</h2>
+        <span class="badge bg-primary fs-5" id="live-clock"></span>
+    </div>
+
+    <div class="row">
+        <!-- Columna principal: turno actual y siguiente -->
+        <div class="col-lg-8">
+            <!-- Turno actual -->
+            <div id="current-appointment-section">
+                {% if current_appointment %}
+                <div class="card text-white bg-success mb-4" data-appointment-id="{{ current_appointment.pk }}">
+                    <div class="card-header d-flex justify-content-between">
+                        <h4 class="mb-0">Atendiendo ahora</h4>
+                        <span class="badge bg-light text-dark align-self-center">Finaliza en: <span class="countdown" data-countdown-to="{{ current_appointment.end_time.isoformat }}">--:--</span></span>
+                    </div>
+                    <div class="card-body">
+                        <h5 class="card-title">{{ current_appointment.client.first_name }} {{ current_appointment.client.last_name }}</h5>
+                        <p class="card-text mb-1"><strong>Servicio:</strong> {{ current_appointment.service.name }}</p>
+                        <p class="card-text"><strong>Horario:</strong> {{ current_appointment.start_time|time:"H:i" }} - {{ current_appointment.end_time|time:"H:i" }}</p>
+                    </div>
+                    <div class="card-footer text-end">
+                        <button class="btn btn-light" onclick="handleStatusUpdate({{ current_appointment.pk }}, 'COMPLETED')"><i class="bi bi-check-circle-fill"></i> Marcar como completado</button>
+                        <button class="btn btn-warning" onclick="handleStatusUpdate({{ current_appointment.pk }}, 'NO_SHOW')"><i class="bi bi-person-x-fill"></i> Marcar como 'no vino'</button>
+                    </div>
+                </div>
+                {% else %}
+                <div class="card bg-secondary mb-4">
+                    <div class="card-body text-center">
+                        <p class="h5">No hay ningún cliente en atención en este momento.</p>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Próximo turno -->
+            <div id="next-appointment-section">
+                {% if next_appointment %}
+                <div class="card border-primary mb-4" data-appointment-id="{{ next_appointment.pk }}">
+                    <div class="card-header d-flex justify-content-between bg-transparent">
+                        <h4 class="mb-0 text-primary">Próximo cliente</h4>
+                        <span class="badge bg-primary align-self-center">Comienza en: <span class="countdown" data-countdown-to="{{ next_appointment.start_time.isoformat }}">--:--</span></span>
+                    </div>
+                    <div class="card-body">
+                        <h5 class="card-title">{{ next_appointment.client.first_name }} {{ next_appointment.client.last_name }}</h5>
+                        <p class="card-text mb-1"><strong>Servicio:</strong> {{ next_appointment.service.name }}</p>
+                        <p class="card-text"><strong>Horario:</strong> {{ next_appointment.start_time|time:"H:i" }} - {{ next_appointment.end_time|time:"H:i" }}</p>
+                    </div>
+                </div>
+                {% else %}
+                <div class="card mb-4">
+                    <div class="card-body text-center">
+                        <p class="h5">No hay más turnos programados para hoy.</p>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Columna secundaria: turnos Pendientes y completados -->
+        <div class="col-lg-4">
+            <h4 class="mb-3">Cola de turnos</h4>
+            <div id="upcoming-list" class="list-group mb-4">
+                {% for app in upcoming_appointments %}
+                    <div class="list-group-item" data-appointment-id="{{ app.pk }}">
+                        <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.client.first_name }}
+                        <small class="d-block text-muted">{{ app.service.name }}</small>
+                    </div>
+                {% empty %}
+                    <div class="list-group-item text-muted">No hay más turnos en espera.</div>
+                {% endfor %}
+            </div>
+
+            <h4 class="mb-3">Turnos finalizados hoy</h4>
+            <div id="completed-list" class="list-group">
+                {% for app in completed_appointments %}
+                    <div class="list-group-item list-group-item-{{ app.status|lower|slice:'-1'|default:'secondary' }} {% if app.status == 'NO_SHOW' %}list-group-item-danger{% elif app.status == 'COMPLETED' %}list-group-item-success{% endif %}">
+                       <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.client.first_name }}
+                       <span class="badge float-end bg-dark">{{ app.get_status_display }}</span>
+                    </div>
+                {% empty %}
+                    <div class="list-group-item text-muted">No hay turnos finalizados hoy.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Reloj en vivo
+    const clockEl = document.getElementById('live-clock');
+    function updateClock() {
+        if (clockEl) {
+            clockEl.textContent = new Date().toLocaleTimeString('es-AR');
+        }
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Lógica de los contadores
+    function updateCountdowns() {
+        const countdownElements = document.querySelectorAll('.countdown');
+        countdownElements.forEach(el => {
+            const targetTime = new Date(el.dataset.countdownTo);
+            const now = new Date();
+            let diff = targetTime - now;
+
+            if (diff <= 0) {
+                el.textContent = "00:00";
+                return;
+            }
+
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            diff -= hours * (1000 * 60 * 60);
+            const mins = Math.floor(diff / (1000 * 60));
+            diff -= mins * (1000 * 60);
+            const secs = Math.floor(diff / 1000);
+
+            let timeString = '';
+            if (hours > 0) {
+                timeString += `${String(hours).padStart(2, '0')}:`;
+            }
+            timeString += `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            el.textContent = timeString;
+        });
+    }
+
+    updateCountdowns();
+    setInterval(updateCountdowns, 1000);
+
+});
+
+// Función para manejar la actualización de estado
+function handleStatusUpdate(appointmentId, newStatus) {
+    const csrfToken = '{{ csrf_token }}';
+    const url = `{% url 'update_appointment_status' 0 %}`.replace('0', appointmentId);
+
+    const formData = new FormData();
+    formData.append('status', newStatus);
+
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken
+        },
+        body: new URLSearchParams(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Recargar la página para ver los cambios. Forma más simple.
+            location.reload();
+        } else {
+            alert(`Error: ${data.message}`);
+        }
+    })
+    .catch(error => {
+        console.error('Fetch error:', error);
+        alert('Ocurrió un error de conexión.');
+    });
+}
+</script>
+{% endblock %}

@@ -7,7 +7,9 @@ from django.db.models.functions import TruncMonth
 from django.contrib.auth import login
 from django.contrib.auth.views import LoginView, PasswordChangeView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.views.decorators.http import require_POST
 from django.views.generic import (
     ListView,
     CreateView,
@@ -337,8 +339,8 @@ class MapView(TemplateView):
     template_name = "map.html"
 
 
-class OwnerDashboardView(OwnerRequiredMixin, TemplateView):
-    template_name = "owner_dashboard.html"
+class OwnerStatsView(OwnerRequiredMixin, TemplateView):
+    template_name = "owner_stats.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -630,3 +632,83 @@ def get_service_detail(request, pk):
             "description": service.description,
         }
     )
+
+
+class WorkstationView(OwnerRequiredMixin, TemplateView):
+    template_name = "workstation.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        hairdresser = self.request.user.hairdresser_profile
+        today = timezone.now().date()
+
+        # Obtenemos todos los turnos del día, ordenados
+        appointments_today = (
+            Appointment.objects.filter(
+                service__hairdresser=hairdresser, start_time__date=today
+            )
+            .select_related("client", "service")
+            .order_by("start_time")
+        )
+
+        now = timezone.now()
+        current_appointment = None
+        next_appointment = None
+        upcoming_appointments = []
+        completed_appointments = []
+
+        found_current = False
+        for app in appointments_today:
+            # Clasificar los turnos
+            if app.status in ["COMPLETED", "NO_SHOW", "CANCELLED"]:
+                completed_appointments.append(app)
+            elif app.start_time <= now < app.end_time and not current_appointment:
+                current_appointment = app
+                found_current = True
+            elif app.start_time > now:
+                if found_current and not next_appointment:
+                    next_appointment = app
+                else:
+                    upcoming_appointments.append(app)
+
+        # Si no hay un turno "en curso", el próximo turno futuro es el "siguiente"
+        if not current_appointment and upcoming_appointments:
+            next_appointment = upcoming_appointments.pop(0)
+
+        context["current_appointment"] = current_appointment
+        context["next_appointment"] = next_appointment
+        context["upcoming_appointments"] = upcoming_appointments
+        context["completed_appointments"] = completed_appointments
+        context["hairdresser"] = hairdresser
+        return context
+
+
+@login_required
+@require_POST
+def update_appointment_status(request, pk):
+    # Asegurarse que el usuario es dueño
+    if not request.user.is_owner:
+        return JsonResponse(
+            {"status": "error", "message": "Permission denied"}, status=403
+        )
+
+    try:
+        # CRÍTICO: Asegurar que el turno pertenece al peluquero logueado
+        appointment = get_object_or_404(
+            Appointment, pk=pk, service__hairdresser=request.user.hairdresser_profile
+        )
+
+        new_status = request.POST.get("status")
+        valid_statuses = ["COMPLETED", "NO_SHOW"]
+
+        if new_status in valid_statuses:
+            appointment.status = new_status
+            appointment.save()
+            return JsonResponse({"status": "success", "message": "Turno actualizado."})
+        else:
+            return JsonResponse(
+                {"status": "error", "message": "Estado inválido."}, status=400
+            )
+
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)

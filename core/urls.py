@@ -16,8 +16,10 @@ from .views import (
     get_review_detail,
     appointment_events_data,
     hairdresser_map_data,
-    OwnerDashboardView,
+    OwnerStatsView,
     earnings_chart_data,
+    WorkstationView,
+    update_appointment_status,
     MyHairdresserInfoView,
     MyHairdresserHoursView,
     MyHairdresserServicesView,
@@ -36,7 +38,13 @@ urlpatterns = [
     path("login/", CustomLoginView.as_view(), name="login"),
     path("logout/", LogoutView.as_view(next_page="home"), name="logout"),
     # URLs del CRUD de Servicios
-    path("dashboard/", OwnerDashboardView.as_view(), name="owner_dashboard"),
+    path("stats/", OwnerStatsView.as_view(), name="owner_stats"),
+    path("workstation/", WorkstationView.as_view(), name="workstation"),
+    path(
+        "workstation/appointment/<int:pk>/update-status/",
+        update_appointment_status,
+        name="update_appointment_status",
+    ),
     path(
         "my-hairdresser/",
         RedirectView.as_view(pattern_name="my_hairdresser_info", permanent=False),

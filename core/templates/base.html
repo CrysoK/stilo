@@ -32,7 +32,10 @@
             </li>
             {% if user.is_owner %}
             <li class="nav-item">
-              <a class="nav-link" href="{% url 'owner_dashboard' %}">Dashboard</a>
+              <a class="nav-link" href="{% url 'workstation' %}">Hoy</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'owner_stats' %}">Estadísticas</a>
             </li>
             <li class="nav-item">
               <a class="nav-link" href="{% url 'my_hairdresser' %}">Peluquería</a>
