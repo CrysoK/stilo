@@ -10,6 +10,10 @@ from .views import (
     ServiceUpdateView,
     ServiceDeleteView,
     AppointmentListView,
+    ReviewCreateView,
+    ReviewUpdateView,
+    ReviewDeleteView,
+    get_review_detail,
     appointment_events_data,
     hairdresser_map_data,
     OwnerDashboardView,
@@ -83,6 +87,14 @@ urlpatterns = [
         name="hairdresser_detail",
     ),
     path("my-appointments/", AppointmentListView.as_view(), name="my_appointments"),
+    path(
+        "appointment/<int:pk>/review/create/",
+        ReviewCreateView.as_view(),
+        name="review_create",
+    ),
+    path("review/<int:pk>/update/", ReviewUpdateView.as_view(), name="review_update"),
+    path("review/<int:pk>/delete/", ReviewDeleteView.as_view(), name="review_delete"),
+    path("api/review/<int:pk>/", get_review_detail, name="review_detail_api"),
     path("profile/", UserProfileView.as_view(), name="user_profile"),
     path(
         "profile/password/", CustomPasswordChangeView.as_view(), name="password_change"

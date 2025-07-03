@@ -1,6 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy, reverse
-from django.http import HttpResponseRedirect, JsonResponse
+from django.http import HttpResponseRedirect, JsonResponse, Http404
 from django.utils import timezone
 from django.db.models import Sum, Count
 from django.db.models.functions import TruncMonth
@@ -29,8 +29,9 @@ from .forms import (
     UserProfileForm,
     CustomPasswordChangeForm,
     ServiceForm,
+    ReviewForm,
 )
-from .models import Appointment, Hairdresser, Service, User, HairdresserImage
+from .models import Appointment, Hairdresser, Service, User, HairdresserImage, Review
 from .utils import get_location_from_ip
 
 # Create your views here.
@@ -178,7 +179,11 @@ class HairdresserDetailView(DetailView):
 
     def get_queryset(self):
         # Prefetch images y services para eficiencia
-        return super().get_queryset().prefetch_related("images", "services")
+        return (
+            super()
+            .get_queryset()
+            .prefetch_related("images", "services__appointments__review")
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -191,6 +196,12 @@ class HairdresserDetailView(DetailView):
         context["services"] = hairdresser.services.all()  # type: ignore
         # Pasamos el formulario a la plantilla
         context["form"] = AppointmentForm(hairdresser=hairdresser)
+        # Pasamos las reseñas a la plantilla
+        context["reviews"] = (
+            Review.objects.filter(appointment__service__hairdresser=hairdresser)
+            .select_related("appointment__client")
+            .order_by("-created_at")
+        )
         return context
 
     def post(self, request, *args, **kwargs):
@@ -222,9 +233,87 @@ class AppointmentListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         # CRÍTICO: Solo mostrar turnos del cliente logueado.
-        return Appointment.objects.filter(client=self.request.user).order_by(
-            "-start_time"
+        return (
+            Appointment.objects.filter(client=self.request.user)
+            .select_related("review", "service__hairdresser")
+            .order_by("-start_time")
         )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["review_form"] = ReviewForm()
+        return context
+
+
+class ReviewCreateView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        appointment = get_object_or_404(Appointment, pk=pk)
+
+        # Security checks
+        if not (
+            appointment.client == request.user
+            and appointment.status == "COMPLETED"
+            and not hasattr(appointment, "review")
+        ):
+            return JsonResponse(
+                {"error": "No tienes permiso para realizar esta acción."}, status=403
+            )
+
+        form = ReviewForm(request.POST)
+        if form.is_valid():
+            review = form.save(commit=False)
+            review.appointment = appointment
+            review.save()
+            return JsonResponse(
+                {"success": True, "review_pk": review.pk, "rating": review.rating}
+            )
+
+        return JsonResponse({"success": False, "errors": form.errors}, status=400)
+
+
+class ReviewUpdateView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        review = get_object_or_404(Review, pk=pk)
+
+        # Security check
+        if review.appointment.client != request.user:
+            return JsonResponse(
+                {"error": "No tienes permiso para editar esta reseña."}, status=403
+            )
+
+        form = ReviewForm(request.POST, instance=review)
+        if form.is_valid():
+            review = form.save()
+            return JsonResponse({"success": True, "rating": review.rating})
+
+        return JsonResponse({"success": False, "errors": form.errors}, status=400)
+
+
+class ReviewDeleteView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        review = get_object_or_404(Review, pk=pk)
+
+        # Security check
+        if review.appointment.client != request.user:
+            return JsonResponse(
+                {"error": "No tienes permiso para borrar esta reseña."}, status=403
+            )
+
+        review.delete()
+        return JsonResponse({"success": True})
+
+
+def get_review_detail(request, pk):
+    # API endpoint to fetch review data for the edit modal
+    review = get_object_or_404(Review, pk=pk)
+    if request.user != review.appointment.client:
+        raise Http404
+
+    data = {
+        "rating": review.rating,
+        "comment": review.comment,
+    }
+    return JsonResponse(data)
 
 
 def hairdresser_map_data(request):

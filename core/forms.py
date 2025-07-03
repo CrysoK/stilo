@@ -13,6 +13,7 @@ from .models import (
     Appointment,
     Service,
     WorkingHours,
+    Review,
 )
 
 
@@ -20,6 +21,26 @@ class UserProfileForm(forms.ModelForm):
     class Meta:
         model = User
         fields = ["username", "first_name", "last_name", "email"]
+
+
+class ReviewForm(forms.ModelForm):
+    rating = forms.ChoiceField(
+        choices=[(i, str(i)) for i in range(5, 0, -1)],
+        widget=forms.RadioSelect,
+        label="Calificación",
+        required=True,
+    )
+
+    class Meta:
+        model = Review
+        fields = [
+            "rating",
+            "comment",
+        ]
+        widgets = {
+            "comment": forms.Textarea(attrs={"rows": 4, "id": "id_review_comment"}),
+        }
+        labels = {"comment": "Comentario (opcional)"}
 
 
 class ServiceForm(forms.ModelForm):
@@ -183,7 +204,7 @@ class BaseWorkingHoursFormSet(forms.BaseInlineFormSet):
         schedules = []
         for form in self.forms:
             if not form.has_changed() or (
-                self.can_delete and form.cleaned_data.get("DELETE")
+                self.can_delete and form.cleaned_data.get("DELETE")  # type: ignore
             ):
                 continue
 

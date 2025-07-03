@@ -57,6 +57,25 @@
       <div class="card shadow-sm">
         <div class="card-body">
           <h1 class="card-title h2 mb-3">{{ hairdresser.name }}</h1>
+          <div class="mb-2">
+            {% if hairdresser.review_count > 0 %}
+            {% with avg_rating=hairdresser.average_rating %}
+              <span class="h5 align-middle">{{ avg_rating|floatformat:1 }}</span>
+              {% for i in "12345" %}
+                  {% if avg_rating >= i|add:0 %}
+                      <i class="bi bi-star-fill text-warning"></i>
+                  {% elif avg_rating > i|add:"-0.5" %}
+                      <i class="bi bi-star-half text-warning"></i>
+                  {% else %}
+                      <i class="bi bi-star text-warning"></i>
+                  {% endif %}
+              {% endfor %}
+              <span class="text-muted">({{ hairdresser.review_count }} reseñas)</span>
+            {% endwith %}
+            {% else %}
+            <span class="text-muted">Sin reseñas</span>
+            {% endif %}
+          </div>
           <p class="lead text-primary mb-2">
             <i class="bi bi-geo-alt-fill"></i> {{ hairdresser.address }}
           </p>
@@ -73,6 +92,20 @@
               <div class="d-flex w-100 justify-content-between align-items-center">
                 <div>
                   <h6 class="mb-1">{{ service.name }}</h6>
+                  {% with service_rating=service.average_rating service_review_count=service.review_count %}
+                    {% if service_review_count > 0 %}
+                    <small class="text-muted d-block">
+                        {% for i in "12345" %}
+                            {% if i|add:0 <= service_rating %}
+                                <i class="bi bi-star-fill text-warning"></i>
+                            {% else %}
+                                <i class="bi bi-star text-warning"></i>
+                            {% endif %}
+                        {% endfor %}
+                        ({{ service_review_count }})
+                    </small>
+                    {% endif %}
+                  {% endwith %}
                   <small class="text-muted">{{ service.duration_minutes }} minutos</small>
                 </div>
                 <span class="badge bg-primary rounded-pill">${{ service.price }}</span>
@@ -89,10 +122,10 @@
     </div>
 
     <div class="col-lg-8">
-      <div class="card shadow-sm">
+      <div class="card shadow-sm mb-4">
         <div class="card-body">
           <h4 class="card-title mb-3">Selecciona un horario</h4>
-          {% if user.is_authenticated %}
+          {% if user.is_authenticated and not user.is_owner %}
           <div class="position-relative">
             <div id='calendar' class="mb-2"></div>
           </div>
@@ -112,6 +145,36 @@
           {% endif %}
         </div>
       </div>
+      <!-- Reseñas -->
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h4 class="card-title mb-3">Opiniones de clientes</h4>
+          {% for review in reviews %}
+            <div class="d-flex mb-3">
+              <div class="flex-shrink-0"><i class="bi bi-person-circle fs-2"></i></div>
+              <div class="ms-3 flex-grow-1">
+                <strong>{{ review.appointment.client.first_name }} {{ review.appointment.client.last_name|first }}.</strong>
+                <div class="mb-1">
+                  {% for i in "12345" %}
+                    {% if i|add:0 <= review.rating %}
+                      <i class="bi bi-star-fill text-warning"></i>
+                    {% else %}
+                      <i class="bi bi-star text-warning"></i>
+                    {% endif %}
+                  {% endfor %}
+                  <span class="text-muted small fst-italic">({{ review.appointment.service.name }})</span>
+                </div>
+                <p>{{ review.comment }}</p>
+                <small class="text-muted">{{ review.created_at|date:"d M, Y" }}</small>
+              </div>
+            </div>
+            {% if not forloop.last %}<hr>{% endif %}
+          {% empty %}
+            <p class="text-muted">Esta peluquería todavía no tiene reseñas.</p>
+          {% endfor %}
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -161,6 +224,7 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     let calendarEl = document.getElementById('calendar');
+    if (!calendarEl) return;
     let appointmentModal = new bootstrap.Modal(document.getElementById('appointmentModal'));
     let calendar = new FullCalendar.Calendar(calendarEl, {
       locale: 'es',

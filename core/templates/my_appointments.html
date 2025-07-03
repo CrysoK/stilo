@@ -1,20 +1,249 @@
 {% extends "base.html" %}
+{% load crispy_forms_tags %}
 
-{% block title %}Mis Turnos{% endblock %}
+{% block title %}Mis turnos{% endblock %}
+
+{% block extra_head %}
+<style>
+  .star-rating {
+    display: inline-flex;
+    flex-direction: row-reverse;
+    justify-content: flex-end;
+  }
+  .star-rating input[type="radio"] {
+    display: none;
+  }
+  .star-rating label {
+    font-size: 1.75rem;
+    color: #6c757d;
+    cursor: pointer;
+    padding: 0 0.1em;
+    transition: color 0.2s;
+  }
+
+  .star-rating label:hover,
+  .star-rating label:hover ~ label {
+    color: #ffdd7a;
+  }
+
+  .star-rating input[type="radio"]:checked ~ label {
+    color: #ffc107;
+  }
+</style>
+{% endblock %}
 
 {% block content %}
-<h2>Mis Turnos Reservados</h2>
+<h2>Mis turnos reservados</h2>
 
-<ul class="list-group mt-3">
+<ul class="list-group mt-3" id="appointments-list">
   {% for app in appointments %}
-  <li class="list-group-item">
-    <h5 class="mb-1">{{ app.service.name }}</h5>
-    <p class="mb-1"><strong>En:</strong> {{ app.service.hairdresser.name }}</p>
-    <p class="mb-1"><strong>Fecha:</strong> {{ app.start_time|date:"d/m/Y H:i" }} hs</p>
-    <small><strong>Estado:</strong> {{ app.get_status_display }}</small>
+  <li class="list-group-item" data-appointment-id="{{ app.pk }}">
+    <div class="d-flex w-100 justify-content-between">
+        <div>
+            <h5 class="mb-1">{{ app.service.name }}</h5>
+            <p class="mb-1"><strong>En:</strong> {{ app.service.hairdresser.name }}</p>
+            <p class="mb-1"><strong>Fecha:</strong> {{ app.start_time|date:"d/m/Y H:i" }} hs</p>
+            <small><strong>Estado:</strong> {{ app.get_status_display }}</small>
+        </div>
+        <div id="review-controls-{{ app.pk }}">
+            {% if app.status == 'COMPLETED' %}
+                {% if not app.review %}
+                    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#reviewFormModal"
+                            data-mode="create" data-appointment-pk="{{ app.pk }}">
+                        Dejar reseña
+                    </button>
+                {% else %}
+                    <div class="text-muted text-end">
+                        <small>Tu calificación:</small><br>
+                        <div class="review-stars-display" id="stars-for-review-{{ app.review.pk }}">
+                            {% for i in "12345" %}
+                                {% if i|add:"0" <= app.review.rating %}
+                                    <i class="bi bi-star-fill text-warning"></i>
+                                {% else %}
+                                    <i class="bi bi-star text-warning"></i>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                        <div class="mt-2">
+                             <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal"
+                                     data-bs-target="#reviewFormModal" data-mode="edit" data-review-pk="{{ app.review.pk }}">
+                                 <i class="bi bi-pencil"></i> Editar
+                             </button>
+                             <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal"
+                                     data-bs-target="#deleteReviewModal" data-review-pk="{{ app.review.pk }}">
+                                 <i class="bi bi-trash"></i> Borrar
+                             </button>
+                        </div>
+                    </div>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
   </li>
   {% empty %}
   <li class="list-group-item">Aún no has reservado ningún turno.</li>
   {% endfor %}
 </ul>
+
+<!-- Review Create/Edit Modal -->
+<div class="modal fade" id="reviewFormModal" tabindex="-1" aria-labelledby="reviewFormModalLabel" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="reviewFormModalLabel">Dejar reseña</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="reviewForm" method="post">
+        {% csrf_token %}
+        <div class="modal-body">
+            <div id="reviewFormErrors" class="alert alert-danger d-none"></div>
+            
+            <!-- Campo de calificación con estrellas -->
+            <div id="div_id_rating" class="mb-3">
+              <label class="form-label requiredField">{{ review_form.rating.label }}<span class="asteriskField">*</span></label>
+              <div class="star-rating">
+                  {% for radio in review_form.rating %}
+                      {{ radio.tag }}
+                      <label for="{{ radio.id_for_label }}" title="{{ radio.choice_label }} estrellas"><i class="bi bi-star-fill"></i></label>
+                  {% endfor %}
+              </div>
+            </div>
+
+            <!-- Campo de comentario con crispy -->
+            {{ review_form.comment|as_crispy_field }}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteReviewModal" tabindex="-1" aria-labelledby="deleteReviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteReviewModalLabel">Confirmar borrado</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="deleteReviewForm" method="post">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <p>¿Estás seguro de que quieres borrar tu reseña? Esta acción no se puede deshacer.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-danger">Sí, borrar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const reviewModalEl = document.getElementById('reviewFormModal');
+    const reviewModal = new bootstrap.Modal(reviewModalEl);
+    const reviewForm = document.getElementById('reviewForm');
+    const reviewFormLabel = document.getElementById('reviewFormModalLabel');
+    const reviewFormErrors = document.getElementById('reviewFormErrors');
+
+    const deleteModalEl = document.getElementById('deleteReviewModal');
+    const deleteModal = new bootstrap.Modal(deleteModalEl);
+    const deleteForm = document.getElementById('deleteReviewForm');
+
+    // --- Review Create/Edit Modal Logic ---
+    reviewModalEl.addEventListener('show.bs.modal', function(event) {
+        const button = event.relatedTarget;
+        const mode = button.getAttribute('data-mode');
+        
+        // Reset form state
+        reviewForm.reset();
+        reviewFormErrors.classList.add('d-none');
+        reviewFormErrors.textContent = '';
+        
+        // Desmarcar todas las estrellas al abrir
+        const checkedRadio = reviewForm.querySelector('[name="rating"]:checked');
+        if (checkedRadio) {
+          checkedRadio.checked = false;
+        }
+
+        if (mode === 'create') {
+            reviewFormLabel.textContent = 'Dejar una reseña';
+            const appointmentPk = button.getAttribute('data-appointment-pk');
+            reviewForm.action = `{% url 'review_create' 0 %}`.replace('0', appointmentPk);
+        } else if (mode === 'edit') {
+            reviewFormLabel.textContent = 'Editar reseña';
+            const reviewPk = button.getAttribute('data-review-pk');
+            reviewForm.action = `{% url 'review_update' 0 %}`.replace('0', reviewPk);
+            
+            // Fetch existing review data
+            fetch(`{% url 'review_detail_api' 0 %}`.replace('0', reviewPk))
+                .then(response => response.json())
+                .then(data => {
+                    // Marcar el radio button correcto, lo que activará el CSS para las estrellas
+                    const radioToSelect = reviewForm.querySelector(`[name="rating"][value="${data.rating}"]`);
+                    if (radioToSelect) {
+                      radioToSelect.checked = true;
+                    }
+                    document.getElementById('id_review_comment').value = data.comment;
+                });
+        }
+    });
+
+    reviewForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(reviewForm);
+        fetch(reviewForm.action, {
+            method: 'POST',
+            body: new URLSearchParams(formData),
+            headers: {
+                'X-CSRFToken': formData.get('csrfmiddlewaretoken'),
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                reviewModal.hide();
+                location.reload();
+            } else {
+                reviewFormErrors.textContent = 'Por favor, corrige los errores. Debes seleccionar una calificación.';
+                reviewFormErrors.classList.remove('d-none');
+            }
+        });
+    });
+
+    // --- Delete Modal Logic ---
+    deleteModalEl.addEventListener('show.bs.modal', function(event) {
+        const button = event.relatedTarget;
+        const reviewPk = button.getAttribute('data-review-pk');
+        deleteForm.action = `{% url 'review_delete' 0 %}`.replace('0', reviewPk);
+    });
+
+    deleteForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(deleteForm);
+        fetch(deleteForm.action, {
+            method: 'POST',
+            body: new URLSearchParams(formData),
+            headers: {'X-CSRFToken': formData.get('csrfmiddlewaretoken')}
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                deleteModal.hide();
+                location.reload(); // Simple solution
+            } else {
+                alert('Hubo un error al borrar la reseña.');
+            }
+        });
+    });
+});
+</script>
 {% endblock %}

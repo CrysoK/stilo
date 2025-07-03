@@ -71,6 +71,20 @@ class Hairdresser(models.Model):
             ]
         )
 
+    def average_rating(self):
+        """Calcula la calificación promedio basada en todas las reseñas de sus
+        servicios."""
+        return (
+            Review.objects.filter(appointment__service__hairdresser=self)
+            .aggregate(avg_rating=models.Avg("rating"))
+            .get("avg_rating")
+            or 0
+        )
+
+    def review_count(self):
+        """Cuuenta el número total de reseñas."""
+        return Review.objects.filter(appointment__service__hairdresser=self).count()
+
 
 class Service(models.Model):
     """
@@ -87,6 +101,20 @@ class Service(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.hairdresser.name}"
+
+    def average_rating(self):
+        """Calcula la calificación promedio para este servicio específico."""
+        # Usamos la relación inversa 'appointments' y luego 'review'
+        # El doble guion bajo __ permite atravesar relaciones.
+        avg = self.appointments.aggregate(avg_rating=models.Avg("review__rating")).get(  # type: ignore
+            "avg_rating"
+        )
+
+        return avg or 0
+
+    def review_count(self):
+        """Cuenta el número de reseñas para este servicio."""
+        return self.appointments.filter(review__isnull=False).count() # type: ignore
 
 
 class Appointment(models.Model):
