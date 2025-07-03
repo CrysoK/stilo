@@ -48,7 +48,7 @@ class Hairdresser(models.Model):
         null=True,
         blank=True,
         related_name="+",
-        help_text="La imagen que se mostrará como principal.",
+        help_text="La imagen que se mostrará como principal",
     )
 
     def __str__(self):
@@ -140,6 +140,11 @@ class Appointment(models.Model):
     )
     start_time = models.DateTimeField()
     end_time = models.DateTimeField(editable=False)  # Se autocalculará
+    amount = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        help_text="El precio del servicio en el momento de la reserva",
+    )
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="PENDING")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -150,6 +155,11 @@ class Appointment(models.Model):
         self.end_time = self.start_time + timedelta(
             minutes=self.service.duration_minutes
         )
+
+        if self.pk is None:
+            # Si el tuerno es nuevo congelamos el precio.
+            self.amount = self.service.price
+
         super().save(*args, **kwargs)
 
     def __str__(self):

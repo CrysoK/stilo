@@ -355,7 +355,7 @@ class OwnerStatsView(OwnerRequiredMixin, TemplateView):
             start_time__gte=start_of_month,
         )
         context["monthly_revenue"] = (
-            completed_this_month.aggregate(total=Sum("service__price"))["total"] or 0
+            completed_this_month.aggregate(total=Sum("amount"))["total"] or 0
         )
         context["monthly_appointments"] = completed_this_month.count()
         # Servicio más popular del mes
@@ -383,7 +383,7 @@ def earnings_chart_data(request):
         Appointment.objects.filter(service__hairdresser=hairdresser, status="COMPLETED")
         .annotate(month=TruncMonth("start_time"))
         .values("month")
-        .annotate(total_earnings=Sum("service__price"))
+        .annotate(total_earnings=Sum("amount"))
         .order_by("month")
     )
     # Formatear para Chart.js
