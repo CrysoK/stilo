@@ -2,7 +2,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy, reverse
 from django.http import HttpResponseRedirect, JsonResponse, Http404
 from django.utils import timezone
-from django.db.models import Sum, Count
+from django.db.models import Sum, Count, Avg
 from django.db.models.functions import TruncMonth
 from django.contrib.auth import login
 from django.contrib.auth.views import LoginView, PasswordChangeView
@@ -19,6 +19,9 @@ from django.views.generic import (
     TemplateView,
     View,
 )
+
+from datetime import datetime
+import calendar
 
 from .forms import (
     HairdresserImageForm,
@@ -345,40 +348,103 @@ class OwnerStatsView(OwnerRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         hairdresser = self.request.user.hairdresser_profile  # type: ignore
-        # Datos para las tarjetas de resumen
-        today = timezone.now().date()
-        start_of_month = today.replace(day=1)
-        # Turnos completados este mes
-        completed_this_month = Appointment.objects.filter(
+
+        # --- Filtro de fecha ---
+        month_str = self.request.GET.get("month")  # formato YYYY-MM
+        try:
+            # Si se provee un mes, se usa. Si no, se usa el actual.
+            if month_str:
+                selected_date = datetime.strptime(month_str, "%Y-%m").date()
+            else:
+                selected_date = timezone.now().date()
+        except ValueError:
+            selected_date = timezone.now().date()
+
+        start_of_month = selected_date.replace(day=1)
+        _, num_days = calendar.monthrange(selected_date.year, selected_date.month)
+        end_of_month = selected_date.replace(day=num_days)
+
+        context["selected_month_iso"] = start_of_month.strftime("%Y-%m")
+        context["start_of_month"] = start_of_month
+
+        # Appointments base querysets for the selected month
+        apps_in_month = Appointment.objects.filter(
             service__hairdresser=hairdresser,
-            status="COMPLETED",
-            start_time__gte=start_of_month,
+            start_time__range=[start_of_month, end_of_month],
         )
+        completed_in_month = apps_in_month.filter(status="COMPLETED")
+
+        # --- Resumen del mes seleccionado ---
         context["monthly_revenue"] = (
-            completed_this_month.aggregate(total=Sum("amount"))["total"] or 0
+            completed_in_month.aggregate(total=Sum("amount"))["total"] or 0
         )
-        context["monthly_appointments"] = completed_this_month.count()
-        # Servicio más popular del mes
-        top_service = (
-            completed_this_month.values("service__name")
-            .annotate(count=Count("service"))
-            .order_by("-count")
-            .first()
+        context["monthly_appointments"] = completed_in_month.count()
+
+        # --- Estadísticas generales del mes seleccionado ---
+        # Tasa de ausentismo
+        total_finished_apps = apps_in_month.filter(
+            status__in=["COMPLETED", "NO_SHOW", "CANCELLED"]
+        ).count()
+        absent_apps = apps_in_month.filter(status__in=["NO_SHOW", "CANCELLED"]).count()
+        context["no_show_rate"] = (
+            (absent_apps / total_finished_apps) * 100 if total_finished_apps > 0 else 0
         )
-        context["top_service"] = top_service["service__name"] if top_service else "N/A"
+
+        # Ticket promedio
+        total_revenue = context["monthly_revenue"]
+        completed_count = context["monthly_appointments"]
+        context["average_ticket"] = (
+            total_revenue / completed_count if completed_count > 0 else 0
+        )
+
+        # Top 5 Clientes (basado en el mes seleccionado)
+        context["top_clients"] = (
+            completed_in_month.values("client__first_name", "client__last_name")
+            .annotate(total_spent=Sum("amount"))
+            .order_by("-total_spent")[:5]
+        )
         return context
 
 
+def _get_date_range_from_request(request):
+    """Helper to get a date range for a given month from a request, or default to current month."""
+    month_str = request.GET.get("month")
+    try:
+        if month_str:
+            selected_date = datetime.strptime(month_str, "%Y-%m").date()
+        else:
+            selected_date = timezone.now().date()
+    except ValueError:
+        selected_date = timezone.now().date()
+
+    start_of_month = selected_date.replace(day=1)
+    _, num_days = calendar.monthrange(start_of_month.year, start_of_month.month)
+    end_of_month = start_of_month.replace(day=num_days)
+
+    return start_of_month, end_of_month
+
+
+def owner_api_required(view_func):
+    """
+    Decorator to check if user is an authenticated owner for API views.
+    """
+
+    def _wrapped_view(request, *args, **kwargs):
+        if not (
+            request.user.is_authenticated
+            and request.user.is_owner  # type: ignore
+            and hasattr(request.user, "hairdresser_profile")
+        ):
+            return JsonResponse({"error": "No autorizado"}, status=403)
+        return view_func(request, *args, **kwargs)
+
+    return _wrapped_view
+
+
+@owner_api_required
 def earnings_chart_data(request):
-    # Asegurar que el usuario sea un dueño
-    if not (
-        request.user.is_authenticated
-        and request.user.is_owner  # type: ignore
-        and hasattr(request.user, "hairdresser_profile")
-    ):
-        return JsonResponse({"error": "No autorizado"}, status=403)
     hairdresser = request.user.hairdresser_profile  # type: ignore
-    # Agrupar turnos completados por mes y sumar precios
+    # This chart shows all-time monthly evolution, so it's not filtered by month.
     data = (
         Appointment.objects.filter(service__hairdresser=hairdresser, status="COMPLETED")
         .annotate(month=TruncMonth("start_time"))
@@ -386,11 +452,78 @@ def earnings_chart_data(request):
         .annotate(total_earnings=Sum("amount"))
         .order_by("month")
     )
-    # Formatear para Chart.js
-    labels = [d["month"].strftime("%B %Y") for d in data]
+    labels = [d["month"].strftime("%B %Y").capitalize() for d in data]
     earnings = [float(d["total_earnings"]) for d in data]
 
     return JsonResponse({"labels": labels, "data": earnings})
+
+
+@owner_api_required
+def revenue_by_service_chart_data(request):
+    hairdresser = request.user.hairdresser_profile  # type: ignore
+    start_date, end_date = _get_date_range_from_request(request)
+
+    data = (
+        Appointment.objects.filter(
+            service__hairdresser=hairdresser,
+            status="COMPLETED",
+            start_time__range=[start_date, end_date],
+        )
+        .values("service__name")
+        .annotate(total_revenue=Sum("amount"))
+        .order_by("-total_revenue")
+    )
+
+    labels = [d["service__name"] for d in data]
+    revenue_data = [float(d["total_revenue"]) for d in data]
+
+    return JsonResponse({"labels": labels, "data": revenue_data})
+
+
+@owner_api_required
+def busiest_days_chart_data(request):
+    hairdresser = request.user.hairdresser_profile  # type: ignore
+    start_date, end_date = _get_date_range_from_request(request)
+
+    # El lookup `__week_day` devuelve 1 (Dom) a 7 (Sáb)
+    day_counts = (
+        Appointment.objects.filter(
+            service__hairdresser=hairdresser,
+            status__in=["COMPLETED", "CONFIRMED", "PENDING"],
+            start_time__range=[start_date, end_date],
+        )
+        .values("start_time__week_day")
+        .annotate(count=Count("id"))
+        .order_by("start_time__week_day")
+    )
+
+    day_map = {
+        1: "Domingo",
+        2: "Lunes",
+        3: "Martes",
+        4: "Miércoles",
+        5: "Jueves",
+        6: "Viernes",
+        7: "Sábado",
+    }
+    final_counts = {day: 0 for day in day_map.values()}
+    for item in day_counts:
+        day_name = day_map.get(item["start_time__week_day"])
+        if day_name:
+            final_counts[day_name] = item["count"]
+
+    ordered_labels = [
+        "Lunes",
+        "Martes",
+        "Miércoles",
+        "Jueves",
+        "Viernes",
+        "Sábado",
+        "Domingo",
+    ]
+    ordered_data = [final_counts[day] for day in ordered_labels]
+
+    return JsonResponse({"labels": ordered_labels, "data": ordered_data})
 
 
 def appointment_events_data(request, hairdresser_id):

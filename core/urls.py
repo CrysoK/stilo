@@ -18,6 +18,8 @@ from .views import (
     hairdresser_map_data,
     OwnerStatsView,
     earnings_chart_data,
+    revenue_by_service_chart_data,
+    busiest_days_chart_data,
     WorkstationView,
     update_appointment_status,
     MyHairdresserInfoView,
@@ -110,6 +112,16 @@ urlpatterns = [
     # URLs de la API
     path("api/map-data/", hairdresser_map_data, name="map_data"),
     path("api/earnings-chart/", earnings_chart_data, name="earnings_chart_data"),
+    path(
+        "api/revenue-by-service-chart/",
+        revenue_by_service_chart_data,
+        name="revenue_by_service_chart",
+    ),
+    path(
+        "api/busiest-days-chart/",
+        busiest_days_chart_data,
+        name="busiest_days_chart",
+    ),
     path(
         "api/hairdresser/<int:hairdresser_id>/events/",
         appointment_events_data,

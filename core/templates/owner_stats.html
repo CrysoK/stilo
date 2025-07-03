@@ -3,44 +3,133 @@
 {% block title %}Estadísticas{% endblock %}
 
 {% block content %}
-<h2 class="mb-4">Estadísticas de {{ user.hairdresser_profile.name }}</h2>
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h2 class="mb-0">Estadísticas de {{ user.hairdresser_profile.name }}</h2>
+    <p class="text-muted mb-0">Mostrando datos para: <strong>{{ start_of_month|date:"F Y"|capfirst }}</strong></p>
+  </div>
+  <form method="get" class="d-flex align-items-center gap-2">
+    <input type="month" class="form-control" name="month" value="{{ selected_month_iso }}">
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+  </form>
+</div>
 {% include 'includes/hairdresser_incomplete_warning.html' with hairdresser=user.hairdresser_profile %}
+
 <!-- Tarjetas de resumen -->
-<h3>Resumen de {% now "F" %}</h3>
 <div class="row my-4">
-  <div class="col-md-4">
-    <div class="card text-white bg-success mb-3">
-      <div class="card-header">Ingresos</div>
+  <div class="col-xl-3 col-md-6 mb-4">
+    <div class="card h-100 border-start border-success border-4 py-2">
       <div class="card-body">
-        <h5 class="card-title">${{ monthly_revenue|floatformat:2 }}</h5>
+        <div class="row no-gutters align-items-center">
+          <div class="col me-2">
+            <div class="text-xs fw-bold text-success text-uppercase mb-1">Ingresos ({{ start_of_month|date:"F"|capfirst }})</div>
+            <div class="h5 mb-0 fw-bold text-gray-800">${{ monthly_revenue|floatformat:2 }}</div>
+          </div>
+          <div class="col-auto">
+            <i class="bi bi-cash-coin fs-2 text-secondary"></i>
+          </div>
+        </div>
       </div>
     </div>
   </div>
-  <div class="col-md-4">
-    <div class="card text-white bg-info mb-3">
-      <div class="card-header">Turnos completados</div>
+  <div class="col-xl-3 col-md-6 mb-4">
+    <div class="card h-100 border-start border-primary border-4 py-2">
       <div class="card-body">
-        <h5 class="card-title">{{ monthly_appointments }}</h5>
+        <div class="row no-gutters align-items-center">
+          <div class="col me-2">
+            <div class="text-xs fw-bold text-primary text-uppercase mb-1">Turnos Completados</div>
+            <div class="h5 mb-0 fw-bold text-gray-800">{{ monthly_appointments }}</div>
+          </div>
+          <div class="col-auto">
+            <i class="bi bi-calendar-check fs-2 text-secondary"></i>
+          </div>
+        </div>
       </div>
     </div>
   </div>
-  <div class="col-md-4">
-    <div class="card text-dark bg-light mb-3">
-      <div class="card-header">Servicio destacado</div>
+  <div class="col-xl-3 col-md-6 mb-4">
+    <div class="card h-100 border-start border-info border-4 py-2">
       <div class="card-body">
-        <h5 class="card-title">{{ top_service }}</h5>
+        <div class="row no-gutters align-items-center">
+          <div class="col me-2">
+            <div class="text-xs fw-bold text-info text-uppercase mb-1">Ticket Promedio</div>
+            <div class="h5 mb-0 fw-bold text-gray-800">${{ average_ticket|floatformat:2 }}</div>
+          </div>
+          <div class="col-auto">
+            <i class="bi bi-receipt-cutoff fs-2 text-secondary"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-3 col-md-6 mb-4">
+    <div class="card h-100 border-start border-warning border-4 py-2">
+      <div class="card-body">
+        <div class="row no-gutters align-items-center">
+          <div class="col me-2">
+            <div class="text-xs fw-bold text-warning text-uppercase mb-1">Tasa de Ausentismo</div>
+            <div class="h5 mb-0 fw-bold text-gray-800">{{ no_show_rate|floatformat:1 }}%</div>
+          </div>
+          <div class="col-auto">
+            <i class="bi bi-person-x fs-2 text-secondary"></i>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </div>
-<h3>Gráficos</h3>
-<!-- Gráfico de Ganancias -->
-<div class="card">
-  <div class="card-header">
-    Evolución de ingresos mensuales
+
+<!-- Gráficos y Top Clientes -->
+<div class="row">
+  <!-- Columna izquierda para gráficos grandes -->
+  <div class="col-lg-8">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3">
+        <h6 class="m-0 fw-bold text-primary">Evolución de Ingresos (Histórico)</h6>
+      </div>
+      <div class="card-body">
+        <div class="chart-area" style="height: 320px"><canvas id="earningsChart"></canvas></div>
+      </div>
+    </div>
+    <div class="card shadow mb-4">
+      <div class="card-header py-3">
+        <h6 class="m-0 fw-bold text-primary">Días más Concurridos ({{ start_of_month|date:"F"|capfirst }})</h6>
+      </div>
+      <div class="card-body">
+        <div class="chart-bar" style="height: 320px"><canvas id="busiestDaysChart"></canvas></div>
+      </div>
+    </div>
   </div>
-  <div class="card-body">
-    <canvas id="earningsChart"></canvas>
+
+  <!-- Columna derecha para gráficos pequeños y listas -->
+  <div class="col-lg-4">
+    <div class="card shadow mb-4">
+      <div class="card-header py-3">
+        <h6 class="m-0 fw-bold text-primary">Ingresos por Servicio ({{ start_of_month|date:"F"|capfirst }})</h6>
+      </div>
+      <div class="card-body">
+        <div class="chart-pie pt-4" style="height: 320px"><canvas id="revenueByServiceChart"></canvas></div>
+      </div>
+    </div>
+    <div class="card shadow mb-4">
+      <div class="card-header py-3">
+        <h6 class="m-0 fw-bold text-primary">Top 5 Clientes ({{ start_of_month|date:"F"|capfirst }})</h6>
+      </div>
+      <div class="card-body">
+        {% if top_clients %}
+        <ul class="list-group list-group-flush">
+          {% for client in top_clients %}
+            <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent">
+              {{ client.client__first_name }} {{ client.client__last_name|first }}.
+              <span class="badge bg-primary rounded-pill">${{ client.total_spent|floatformat:2 }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted">No hay datos suficientes para este mes.</p>
+        {% endif %}
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -50,33 +139,77 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    const ctx = document.getElementById('earningsChart').getContext('2d');
+    // --- Configuración general de Chart.js para el tema oscuro ---
+    Chart.defaults.maintainAspectRatio = false;
+    Chart.defaults.color = '#adb5bd';
+    Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
 
-    fetch("{% url 'earnings_chart_data' %}")
-      .then(response => response.json())
-      .then(data => {
-        new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: data.labels,
-            datasets: [{
-              label: 'Ingresos ($)',
-              data: data.data,
-              borderColor: 'rgb(75, 192, 192)',
-              tension: 0.1,
-              fill: true,
-            }]
-          },
-          options: {
-            scales: {
-              y: {
-                beginAtZero: true
-              }
-            }
+    // --- Obtener el mes del filtro de la URL ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const monthQueryParam = urlParams.get('month') ? `?month=${urlParams.get('month')}` : '';
+
+    // --- Función para renderizar gráficos ---
+    function renderChart(canvasId, url, chartType, customOptions = {}, datasetOptions = {}) {
+      const ctx = document.getElementById(canvasId);
+      if (!ctx) return;
+      
+      const chartInstance = Chart.getChart(ctx);
+      if (chartInstance) {
+          chartInstance.destroy();
+      }
+      
+      const chartWrapper = ctx.parentElement;
+      // Limpiar mensajes de "no hay datos" anteriores
+      const noDataMessage = chartWrapper.querySelector('.no-data-message');
+      if (noDataMessage) {
+        noDataMessage.remove();
+      }
+      ctx.style.display = 'block';
+
+      fetch(url)
+        .then(response => response.json())
+        .then(chartData => {
+          if (chartData.labels.length === 0 || chartData.data.every(item => item === 0)) {
+            ctx.style.display = 'none';
+            chartWrapper.insertAdjacentHTML('beforeend', '<p class="no-data-message text-center text-muted mt-5">No hay datos para mostrar en este período.</p>');
+            return;
           }
-        });
-      })
-      .catch(error => console.error('Error al cargar los datos del gráfico:', error));
+          new Chart(ctx, {
+            type: chartType,
+            data: {
+              labels: chartData.labels,
+              datasets: [{
+                label: 'Valor',
+                data: chartData.data,
+                backgroundColor: chartType === 'doughnut' ? ['#4e73df', '#1cc88a', '#36b9cc', '#f6c23e', '#e74a3b', '#5a5c69', '#fd7e14'] : 'rgba(78, 115, 223, 0.7)',
+                borderColor: chartType === 'line' ? 'rgba(78, 115, 223, 1)' : 'rgba(78, 115, 223, 1)',
+                ...datasetOptions
+              }]
+            },
+            options: customOptions
+          });
+        })
+        .catch(error => console.error(`Error al cargar datos para ${canvasId}:`, error));
+    }
+
+    // --- Renderizar los gráficos ---
+
+    // 1. Gráfico de línea: Evolución de Ingresos (no se filtra por mes)
+    renderChart('earningsChart', "{% url 'earnings_chart_data' %}", 'line',
+      { scales: { y: { beginAtZero: true, ticks: { callback: (value) => '$' + value } } } },
+      { tension: 0.3, fill: true, backgroundColor: 'rgba(78, 115, 223, 0.1)' }
+    );
+
+    // 2. Gráfico de "Dona": Ingresos por Servicio (filtrado)
+    renderChart('revenueByServiceChart', `{% url 'revenue_by_service_chart' %}${monthQueryParam}`, 'doughnut',
+      { plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } },
+      { borderWidth: 2, borderColor: '#212529' }
+    );
+
+    // 3. Gráfico de barras: Días más concurridos (filtrado)
+    renderChart('busiestDaysChart', `{% url 'busiest_days_chart' %}${monthQueryParam}`, 'bar',
+      { scales: { y: { ticks: { stepSize: 1 } } } }
+    );
   });
 </script>
 {% endblock %}
