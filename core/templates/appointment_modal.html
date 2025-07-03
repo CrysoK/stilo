@@ -6,17 +6,23 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
+        <p><strong>Servicio:</strong> <span id="modalServiceName"></span></p>
         <p><strong>Fecha y Hora:</strong> <span id="modalDateTime"></span></p>
-        <form id="appointmentForm" method="post">
+        <hr>
+        <p class="mb-1"><strong>Duración:</strong> <span id="modalServiceDuration"></span> minutos</p>
+        <p><strong>Precio:</strong> $<span id="modalServicePrice"></span></p>
+        
+        <div id="form-errors" class="alert alert-danger d-none mt-3"></div>
+
+        <form id="appointmentForm" method="post" action="{{ request.path }}">
           {% csrf_token %}
-          {% load crispy_forms_tags %}
-          {{ form|crispy }}
-          <input type="hidden" name="start_time" id="modalStartTime">
+          {{ form.service }}
+          {{ form.start_time }}
         </form>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-primary" onclick="document.getElementById('appointmentForm').submit();">Reservar</button>
+        <button type="button" class="btn btn-primary" id="confirmAppointmentBtn">Reservar</button>
       </div>
     </div>
   </div>

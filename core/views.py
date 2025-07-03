@@ -20,7 +20,7 @@ from django.views.generic import (
     View,
 )
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import calendar
 
 from .forms import (
@@ -36,7 +36,15 @@ from .forms import (
     ServiceForm,
     ReviewForm,
 )
-from .models import Appointment, Hairdresser, Service, User, HairdresserImage, Review
+from .models import (
+    Appointment,
+    Hairdresser,
+    Service,
+    User,
+    HairdresserImage,
+    Review,
+    WorkingHours,
+)
 from .utils import get_location_from_ip
 
 # Create your views here.
@@ -187,7 +195,11 @@ class HairdresserDetailView(DetailView):
         return (
             super()
             .get_queryset()
-            .prefetch_related("images", "services__appointments__review")
+            .prefetch_related(
+                "images",
+                "services__appointments__review",
+                "working_hours",
+            )
         )
 
     def get_context_data(self, **kwargs):
@@ -198,6 +210,23 @@ class HairdresserDetailView(DetailView):
             all_images.remove(hairdresser.cover_image)  # type: ignore
             all_images.insert(0, hairdresser.cover_image)  # type: ignore
         context["ordered_images"] = all_images
+
+        working_hours = hairdresser.working_hours.all()  # type: ignore
+        if working_hours.exists():
+            min_time = min(wh.start_time for wh in working_hours)
+            max_time = max(wh.end_time for wh in working_hours)
+            min_dt = datetime.combine(datetime.min.date(), min_time)
+            max_dt = datetime.combine(datetime.min.date(), max_time)
+            context["slot_min_time"] = (min_dt - timedelta(hours=1)).strftime(
+                "%H:%M:%S"
+            )
+            context["slot_max_time"] = (max_dt + timedelta(hours=1)).strftime(
+                "%H:%M:%S"
+            )
+        else:
+            context["slot_min_time"] = "09:00:00"
+            context["slot_max_time"] = "20:00:00"
+
         context["services"] = hairdresser.services.all()  # type: ignore
         # Pasamos el formulario a la plantilla
         context["form"] = AppointmentForm(hairdresser=hairdresser)
@@ -210,9 +239,11 @@ class HairdresserDetailView(DetailView):
         return context
 
     def post(self, request, *args, **kwargs):
-        # Solo clientes logueados pueden reservar
-        if not request.user.is_authenticated:
-            return redirect("login")
+        if not request.user.is_authenticated or request.user.is_owner:
+            return JsonResponse(
+                {"success": False, "error": "No tienes permiso para reservar."},
+                status=403,
+            )
 
         hairdresser = self.get_object()
         form = AppointmentForm(request.POST, hairdresser=hairdresser)
@@ -220,15 +251,22 @@ class HairdresserDetailView(DetailView):
         if form.is_valid():
             appointment = form.save(commit=False)
             appointment.client = request.user
-            # El end_time se calcula automáticamente en el método save() del modelo
             appointment.save()
-            # Redirigimos a la nueva página 'mis turnos'
-            return HttpResponseRedirect(reverse_lazy("my_appointments"))
+            messages.success(self.request, "¡Tu turno ha sido reservado con éxito!")
+            return JsonResponse(
+                {"success": True, "redirect_url": reverse("my_appointments")}
+            )
         else:
-            # Si el formulario no es válido, volvemos a renderizar la página con los errores
-            context = self.get_context_data()
-            context["form"] = form
-            return self.render_to_response(context)
+            # Devolver el primer error encontrado para mostrarlo en el modal
+            error_message = "Por favor, corrige los errores."
+            # Los errores de `clean()` van a `__all__`
+            if "__all__" in form.errors:
+                error_message = form.errors["__all__"][0]
+            else:
+                for field in form.errors:
+                    error_message = form.errors[field][0]
+                    break
+            return JsonResponse({"success": False, "error": error_message}, status=400)
 
 
 class AppointmentListView(LoginRequiredMixin, ListView):
@@ -528,8 +566,28 @@ def busiest_days_chart_data(request):
 
 def appointment_events_data(request, hairdresser_id):
     # Devuelve los turnos de una peluquería como eventos de FullCalendar
-    appointments = Appointment.objects.filter(service__hairdresser_id=hairdresser_id)
+    appointments = Appointment.objects.filter(
+        service__hairdresser_id=hairdresser_id,
+        # Considerar turnos pendientes o confirmados como no disponibles
+        status__in=["PENDING", "CONFIRMED"],
+    )
+    working_hours = WorkingHours.objects.filter(hairdresser_id=hairdresser_id)
     events = []
+
+    # Agregar horarios de atención como eventos de fondo
+    # Mapeo: Django (0=Lun..6=Dom) a FullCalendar (0=Dom..6=Sab)
+    for wh in working_hours:
+        fc_day = (wh.day_of_week + 1) % 7
+        events.append(
+            {
+                "daysOfWeek": [fc_day],
+                "startTime": wh.start_time.strftime("%H:%M"),
+                "endTime": wh.end_time.strftime("%H:%M"),
+                "display": "background",
+                "groupId": "working_hours",  # Para usar en selectConstraint
+            }
+        )
+
     for app in appointments:
         events.append(
             {

@@ -19,6 +19,11 @@
     aspect-ratio: 16 / 7;
     object-fit: cover;
   }
+  .service-item.active {
+    border-width: 2px;
+    border-color: var(--bs-primary) !important;
+    background-color: rgba(var(--bs-primary-rgb), 0.1);
+  }
   @media (min-width: 992px) {
     .carousel-image-responsive {
       aspect-ratio: 4 / 3;
@@ -85,10 +90,14 @@
 
       <div class="card shadow-sm mt-4">
         <div class="card-body">
-          <h3 class="h4 card-title mb-3">Servicios ofrecidos</h3>
-          <div class="list-group">
+          <h3 class="h4 card-title mb-3">1. Selecciona un servicio</h3>
+          <div class="list-group" id="service-list">
             {% for service in services %}
-            <div class="list-group-item list-group-item-action">
+            <a href="#" class="list-group-item list-group-item-action service-item"
+               data-service-id="{{ service.pk }}"
+               data-service-name="{{ service.name }}"
+               data-service-duration="{{ service.duration_minutes }}"
+               data-service-price="{{ service.price|floatformat:2 }}">
               <div class="d-flex w-100 justify-content-between align-items-center">
                 <div>
                   <h6 class="mb-1">{{ service.name }}</h6>
@@ -104,7 +113,7 @@
                 </div>
                 <span class="badge bg-primary rounded-pill">${{ service.price }}</span>
               </div>
-            </div>
+            </a>
             {% empty %}
             <div class="list-group-item text-center text-muted">
               Esta peluquería aún no ha cargado servicios.
@@ -118,7 +127,7 @@
     <div class="col-lg-8">
       <div class="card shadow-sm mb-4">
         <div class="card-body">
-          <h4 class="card-title mb-3">Selecciona un horario</h4>
+          <h4 class="card-title mb-3">2. Selecciona un horario</h4>
           {% if user.is_authenticated and not user.is_owner %}
           <div class="position-relative">
             <div id='calendar' class="mb-2"></div>
@@ -180,7 +189,6 @@
 {% block extra_scripts %}
 <script>
   function showPopover(target, message, event = null) {
-    // Clean up any existing popovers
     const existingPopovers = document.querySelectorAll('[data-bs-toggle="popover"]');
     existingPopovers.forEach(el => {
       const popover = bootstrap.Popover.getInstance(el);
@@ -188,38 +196,51 @@
         popover.dispose();
       }
     });
-
-    // Create temporary element for click-based popovers
     let element = target;
-    if (event) {
+    if (event && !element) {
       element = document.createElement('div');
       element.style.position = 'absolute';
       element.style.left = event.pageX + 'px';
-      element.style.top = (event.pageY - 10) + 'px'; // Offset up slightly for better visibility
+      element.style.top = (event.pageY - 10) + 'px';
       document.body.appendChild(element);
     }
-
     const popover = new bootstrap.Popover(element, {
-      content: message,
-      placement: 'auto',
-      trigger: 'manual',
-      customClass: 'text-danger'
+      content: message, placement: 'auto', trigger: 'manual', customClass: 'text-danger'
     });
-    
     popover.show();
     setTimeout(() => {
       popover.hide();
-      // Remove temporary element if it was created
-      if (event) {
+      if (event && !target) {
         setTimeout(() => element.remove(), 150);
       }
     }, 2000);
   }
 
   document.addEventListener("DOMContentLoaded", function () {
-    let calendarEl = document.getElementById('calendar');
+    const calendarEl = document.getElementById('calendar');
     if (!calendarEl) return;
-    let appointmentModal = new bootstrap.Modal(document.getElementById('appointmentModal'));
+    
+    const appointmentModalEl = document.getElementById('appointmentModal');
+    const appointmentModal = new bootstrap.Modal(appointmentModalEl);
+    let selectedService = null;
+    const serviceListContainer = document.getElementById('service-list');
+
+    if (serviceListContainer) {
+      serviceListContainer.addEventListener('click', function(e) {
+        e.preventDefault();
+        const serviceItem = e.target.closest('.service-item');
+        if (!serviceItem) return;
+        document.querySelectorAll('.service-item.active').forEach(item => item.classList.remove('active'));
+        serviceItem.classList.add('active');
+        selectedService = {
+            id: serviceItem.dataset.serviceId,
+            name: serviceItem.dataset.serviceName,
+            duration: parseInt(serviceItem.dataset.serviceDuration),
+            price: serviceItem.dataset.servicePrice,
+        };
+      });
+    }
+
     let calendar = new FullCalendar.Calendar(calendarEl, {
       locale: 'es',
       themeSystem: 'bootstrap5',
@@ -230,41 +251,122 @@
         right: 'dayGridMonth,timeGridWeek'
       },
       expandRows: true,
-      slotMinTime: "09:00:00", // TODO: obtener de la base de datos
-      slotMaxTime: "20:00:00", // TODO: obtener de la base de datos
-      slotLabelInterval: '01:00:00',
-      slotDuration: '00:30:00', // Segmentación visual
-      snapDuration: '00:05:00', // Segmentación para clicks
+      slotMinTime: "{{ slot_min_time }}",
+      slotMaxTime: "{{ slot_max_time }}",
       allDaySlot: false,
       nowIndicator: true,
-      scrollTime: (new Date()).toISOString().slice(0, 16),
       events: "{% url 'appointment_events' hairdresser.pk %}",
-      eventClick: function (info) {
-        // Prevenir reservas en turnos ocupados
-        if (info.event.title === "Reservado") {
-          showPopover(info.el, "Este horario ya está reservado");
-          return;
+      
+      eventClick: function(info) {
+        if (info.event.display !== 'background') {
+          showPopover(info.el, "Este horario ya está reservado.", info.jsEvent);
         }
       },
-      dateClick: function (info) {
-        // Prevenir reservas en horarios pasados
+
+      dateClick: function(info) {
+        if (!selectedService) {
+          showPopover(serviceListContainer, "Por favor, primero selecciona un servicio de la lista.");
+          serviceListContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+
+        const clickedTime = info.date;
         const now = new Date();
-        const selectedDateTime = info.date;
-        if (selectedDateTime < now) {
+        if (clickedTime < now) {
           showPopover(null, "No se pueden reservar horarios pasados", info.jsEvent);
           return;
         }
-        // Formatear fecha y hora para el modal y el formulario
-        const formattedDateTime = selectedDateTime.toLocaleString("es-ES", {
-          dateStyle: "long", timeStyle: "short"
-        })
-        const isoDateTime = new Date(selectedDateTime.getTime() - (selectedDateTime.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-        document.getElementById("modalDateTime").innerText = formattedDateTime;
-        document.getElementById("modalStartTime").value = isoDateTime;
-        appointmentModal.show();
+
+        const workingHoursEvents = calendar.getEvents().filter(e => e.groupId === 'working_hours');
+        let containingWorkingHour = null;
+
+        for (const whEvent of workingHoursEvents) {
+          const eventDay = whEvent.start ? whEvent.start.getDay() : whEvent._instance.range.start.getDay();
+          const clickedDay = clickedTime.getDay();
+          const startTimeStr = whEvent.extendedProps.startTime || whEvent.start.toTimeString().slice(0, 5);
+          const endTimeStr = whEvent.extendedProps.endTime || whEvent.end.toTimeString().slice(0, 5);
+          const clickedTimeStr = clickedTime.toTimeString().slice(0, 5);
+          if (eventDay === clickedDay && clickedTimeStr >= startTimeStr && clickedTimeStr < endTimeStr) {
+            containingWorkingHour = whEvent;
+            break;
+          }
+        }
+        
+        if (containingWorkingHour) {
+          // Frontend validation for end time
+          const proposedEndTime = new Date(clickedTime.getTime() + selectedService.duration * 60000);
+          const [endHours, endMinutes] = (containingWorkingHour.extendedProps.endTime || containingWorkingHour.end.toTimeString().slice(0,5)).split(':');
+          const workDayEndTime = new Date(clickedTime);
+          workDayEndTime.setHours(endHours, endMinutes, 0, 0);
+
+          if (proposedEndTime > workDayEndTime) {
+              showPopover(null, "El servicio finaliza fuera del horario de atención.", info.jsEvent);
+              return;
+          }
+
+          document.getElementById("modalServiceName").innerText = selectedService.name;
+          document.getElementById("modalServiceDuration").innerText = selectedService.duration;
+          document.getElementById("modalServicePrice").innerText = selectedService.price;
+          document.getElementById("modalDateTime").innerText = clickedTime.toLocaleString("es-ES", { dateStyle: "long", timeStyle: "short" });
+
+          const isoDateTime = new Date(clickedTime.getTime() - (clickedTime.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+          document.querySelector('#appointmentForm [name="service"]').value = selectedService.id;
+          document.querySelector('#appointmentForm [name="start_time"]').value = isoDateTime;
+
+          appointmentModal.show();
+        } else {
+          showPopover(null, "La peluquería no atiende en este horario.", info.jsEvent);
+        }
       }
-    })
+    });
     calendar.render();
-  })
+
+    const confirmBtn = document.getElementById('confirmAppointmentBtn');
+    if (confirmBtn) {
+      confirmBtn.addEventListener('click', function() {
+        const form = document.getElementById('appointmentForm');
+        const formData = new FormData(form);
+        const errorDiv = document.getElementById('form-errors');
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Reservando...';
+        errorDiv.classList.add('d-none');
+
+        fetch(form.action, {
+          method: 'POST',
+          body: new URLSearchParams(formData),
+          headers: { 'X-CSRFToken': formData.get('csrfmiddlewaretoken') }
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            window.location.href = data.redirect_url;
+          } else {
+            errorDiv.textContent = data.error;
+            errorDiv.classList.remove('d-none');
+          }
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          errorDiv.textContent = 'Ocurrió un error inesperado. Inténtalo de nuevo.';
+          errorDiv.classList.remove('d-none');
+        })
+        .finally(() => {
+          confirmBtn.disabled = false;
+          confirmBtn.innerHTML = 'Reservar';
+        });
+      });
+    }
+
+    // Limpiar el estado del modal al cerrarse
+    appointmentModalEl.addEventListener('hide.bs.modal', function() {
+      const errorDiv = document.getElementById('form-errors');
+      errorDiv.classList.add('d-none');
+      errorDiv.textContent = '';
+      
+      const confirmBtn = document.getElementById('confirmAppointmentBtn');
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = 'Reservar';
+    });
+  });
 </script>
 {% endblock %}

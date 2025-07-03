@@ -15,6 +15,7 @@ from .models import (
     WorkingHours,
     Review,
 )
+from datetime import timedelta
 
 
 class UserProfileForm(forms.ModelForm):
@@ -121,7 +122,6 @@ class AppointmentForm(forms.ModelForm):
         hairdresser = kwargs.pop("hairdresser", None)
         super().__init__(*args, **kwargs)
 
-        # Update service queryset if hairdresser is provided
         if hairdresser:
             self.fields["service"].queryset = Service.objects.filter(  # type: ignore
                 hairdresser=hairdresser
@@ -129,11 +129,9 @@ class AppointmentForm(forms.ModelForm):
         else:
             self.fields["service"].queryset = Service.objects.none()  # type: ignore
 
-        # Set minimum datetime
-        now = timezone.now()
-        self.fields["start_time"].widget.attrs["min"] = timezone.localtime(
-            now
-        ).strftime("%Y-%m-%dT%H:%M:%S")
+        # Los campos se poblarán con JS, por lo que los ocultamos.
+        self.fields["service"].widget = forms.HiddenInput()
+        self.fields["start_time"].widget = forms.HiddenInput()
 
     class Meta:
         model = Appointment
@@ -143,19 +141,54 @@ class AppointmentForm(forms.ModelForm):
         """
         Valida que la fecha y hora del turno no sea en el pasado.
         """
-        # Obtenemos el valor del campo del formulario ya procesado por Django
         start_time = self.cleaned_data.get("start_time")
-
-        # Comparamos con la hora actual
         if start_time and start_time <= timezone.now():
-            # Si la fecha es pasada o actual, lanzamos un error de validación.
-            # Este mensaje se mostrará al usuario junto al campo del formulario.
             raise forms.ValidationError(
                 "No puedes reservar un turno en el pasado. Por favor, elige una fecha y hora futura.",
                 code="past_date",
             )
-
         return start_time
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_time = cleaned_data.get("start_time")
+        service = cleaned_data.get("service")
+
+        if not start_time or not service:
+            return cleaned_data
+
+        end_time = start_time + timedelta(minutes=service.duration_minutes)
+        hairdresser = service.hairdresser
+
+        # 1. Validar que el turno cabe dentro de un horario de trabajo
+        valid_slot_exists = WorkingHours.objects.filter(
+            hairdresser=hairdresser,
+            day_of_week=start_time.weekday(),
+            start_time__lte=start_time.time(),
+            end_time__gte=end_time.time(),
+        ).exists()
+
+        if not valid_slot_exists:
+            raise ValidationError(
+                "El servicio excede el horario de atención para el día seleccionado.",
+                code="outside_working_hours",
+            )
+
+        # 2. Comprobar si hay turnos que se superponen
+        overlapping_appointments = Appointment.objects.filter(
+            service__hairdresser=hairdresser,
+            status__in=["PENDING", "CONFIRMED"],
+            start_time__lt=end_time,
+            end_time__gt=start_time,
+        )
+
+        if overlapping_appointments.exists():
+            raise ValidationError(
+                "El horario seleccionado ya no está disponible. Por favor, elija otro.",
+                code="overlap",
+            )
+
+        return cleaned_data
 
 
 class HairdresserSetupForm(forms.ModelForm):
