@@ -14,11 +14,14 @@
       <div class="mb-3">
         <label class="form-label">Ubicación en el mapa</label>
         <div id="map" style="height: 350px; width: 100%;" class="mb-2 rounded"></div>
-        <div class="btn-group btn-group-sm" role="group">
-          <button type="button" id="use-current-location" class="btn btn-secondary">
+        <div class="d-flex flex-wrap gap-2" role="group">
+          <button type="button" id="use-current-location" class="btn btn-sm btn-secondary">
             <i class="bi bi-geo-alt-fill"></i> Usar mi ubicación actual
           </button>
-          <button type="button" id="update-address-from-map" class="btn btn-info">
+          <button type="button" id="locate-address-on-map" class="btn btn-sm btn-primary">
+            <i class="bi bi-search"></i> Localizar dirección en el mapa
+          </button>
+          <button type="button" id="update-address-from-map" class="btn btn-sm btn-info">
             <i class="bi bi-arrow-clockwise"></i> Actualizar dirección desde el mapa
           </button>
         </div>
@@ -44,6 +47,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const addressField = document.querySelector('#id_address');
 
   if (document.getElementById('map') && latField && lonField && addressField) {
+
     const latVal = "{{ object.latitude|default:'' }}".replace(',', '.');
     const lonVal = "{{ object.longitude|default:'' }}".replace(',', '.');
 
@@ -112,10 +116,10 @@ document.addEventListener('DOMContentLoaded', function () {
           const lon = position.coords.longitude;
           placeMarkerAndPan(lat, lon);
         }, function () {
-          alert('No se pudo obtener la ubicación.');
+          showFeedbackMessage('No se pudo obtener la ubicación.', 'danger');
         });
       } else {
-        alert('La geolocalización no es soportada por este navegador.');
+        showFeedbackMessage('La geolocalización no es soportada por este navegador.', 'warning');
       }
     });
 
@@ -124,8 +128,48 @@ document.addEventListener('DOMContentLoaded', function () {
         const position = marker.getLatLng();
         reverseGeocode(position.lat, position.lng);
       } else {
-        alert('Por favor, primero marque una ubicación en el mapa.');
+        showFeedbackMessage('Por favor, primero marque una ubicación en el mapa.', 'warning');
       }
+    });
+
+    document.getElementById('locate-address-on-map').addEventListener('click', function() {
+      const address = addressField.value.trim();
+      if (!address) {
+        showFeedbackMessage('Por favor, ingrese una dirección primero.', 'warning');
+        return;
+      }
+
+      const btn = this;
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Buscando...';
+
+      fetch(`/api/geocode/?address=${encodeURIComponent(address)}`)
+        .then(response => {
+          if (!response.ok) {
+            return response.json().then(data => {
+              throw new Error(data.error || 'No se pudo encontrar la dirección.');
+            });
+          }
+          return response.json();
+        })
+        .then(data => {
+          if (data && data.latitude && data.longitude) {
+            const lat = parseFloat(data.latitude);
+            const lon = parseFloat(data.longitude);
+            placeMarkerAndPan(lat, lon);
+          } else {
+            throw new Error('No se encontraron coordenadas válidas.');
+          }
+        })
+        .catch(err => {
+          console.error("Error during geocoding:", err);
+          showFeedbackMessage(err.message || 'No se pudo encontrar la dirección.', 'danger');
+        })
+        .finally(() => {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+        });
     });
   }
 });

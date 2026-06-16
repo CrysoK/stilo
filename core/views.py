@@ -45,7 +45,7 @@ from .models import (
     Review,
     WorkingHours,
 )
-from .utils import get_location_from_ip
+from .utils import get_location_from_ip, geocode_address
 
 # Create your views here.
 
@@ -477,6 +477,26 @@ def owner_api_required(view_func):
         return view_func(request, *args, **kwargs)
 
     return _wrapped_view
+
+
+@owner_api_required
+def geocode_address_api(request):
+    address = request.GET.get("address", "").strip()
+    if not address:
+        return JsonResponse({"error": "La dirección es requerida."}, status=400)
+
+    coords = geocode_address(address)
+    if coords:
+        return JsonResponse({
+            "success": True,
+            "latitude": coords["latitude"],
+            "longitude": coords["longitude"],
+        })
+    else:
+        return JsonResponse({
+            "success": False,
+            "error": "No se pudo encontrar la dirección en el mapa.",
+        }, status=404)
 
 
 @owner_api_required

@@ -31,6 +31,7 @@ from .views import (
     UserProfileView,
     CustomPasswordChangeView,
     get_service_detail,
+    geocode_address_api,
 )
 
 urlpatterns = [
@@ -111,6 +112,7 @@ urlpatterns = [
     ),
     # URLs de la API
     path("api/map-data/", hairdresser_map_data, name="map_data"),
+    path("api/geocode/", geocode_address_api, name="geocode_address_api"),
     path("api/earnings-chart/", earnings_chart_data, name="earnings_chart_data"),
     path(
         "api/revenue-by-service-chart/",
