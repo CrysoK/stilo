@@ -1,0 +1,29 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+<h2 style="color: #dc3545;">Reserva Cancelada</h2>
+<p>Hola, {{ appointment.service.hairdresser.owner.first_name }}:</p>
+<p>Te informamos que se ha cancelado una de las reservas agendadas en tu peluquería, <strong>{{ appointment.service.hairdresser.name }}</strong>. Los detalles de la cita cancelada son:</p>
+
+<div class="detail-card" style="border-left-color: #dc3545;">
+    <div class="detail-row">
+        <span class="detail-label">Cliente:</span>
+        <span class="detail-value">{{ appointment.client.first_name }} {{ appointment.client.last_name }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Servicio:</span>
+        <span class="detail-value">{{ appointment.service.name }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Fecha:</span>
+        <span class="detail-value">{{ appointment.start_time|date:"d/m/Y" }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Hora:</span>
+        <span class="detail-value">{{ appointment.start_time|date:"H:i" }} hs</span>
+    </div>
+</div>
+
+<p>Este espacio de tiempo ha quedado liberado y se encuentra disponible nuevamente para recibir otras reservas en la plataforma.</p>
+<p>Atentamente,<br>El equipo de Stilo</p>
+{% endblock %}

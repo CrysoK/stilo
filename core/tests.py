@@ -150,3 +150,162 @@ class GeocodingTestCase(TestCase):
         response = self.client.get(reverse('geocode_address_api') + "?address=   ")
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json(), {"error": "La dirección es requerida."})
+
+
+from django.core import mail
+from django.conf import settings
+from django.utils import timezone
+from core.models import Service, Appointment
+import datetime
+
+class NotificationTestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.owner = User.objects.create_user(
+            username="owner_notify",
+            password="password123",
+            first_name="OwnerName",
+            last_name="OwnerLastName",
+            email="owner_notify@test.com",
+            is_owner=True
+        )
+        self.hairdresser = Hairdresser.objects.create(
+            owner=self.owner,
+            name="Salon Notify",
+            address="Av. Siempre Viva 742"
+        )
+        self.client_user = User.objects.create_user(
+            username="client_notify",
+            password="password123",
+            first_name="ClientName",
+            last_name="ClientLastName",
+            email="client_notify@test.com",
+            is_owner=False
+        )
+        self.service = Service.objects.create(
+            hairdresser=self.hairdresser,
+            name="Corte Clasico",
+            price=20.0,
+            duration_minutes=30
+        )
+
+    def test_welcome_email_on_signup(self):
+        mail.outbox = []
+        signup_data = {
+            "username": "new_user",
+            "first_name": "Nuevo",
+            "last_name": "Usuario",
+            "email": "new_user@test.com",
+            "password1": "SecurePass123!",
+            "password2": "SecurePass123!",
+            "is_owner": False
+        }
+        response = self.client.post(reverse("signup"), signup_data)
+        self.assertEqual(response.status_code, 302) # Redirige al home
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ["new_user@test.com"])
+        self.assertIn("¡Te damos la bienvenida a Stilo!", email.subject)
+        self.assertIn("Nuevo", email.body)
+
+    def test_password_change_email(self):
+        self.client.login(username="client_notify", password="password123")
+        mail.outbox = []
+        change_password_data = {
+            "old_password": "password123",
+            "new_password1": "NewSecurePass123!",
+            "new_password2": "NewSecurePass123!",
+        }
+        response = self.client.post(reverse("password_change"), change_password_data)
+        self.assertEqual(response.status_code, 302) # Redirige al perfil
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ["client_notify@test.com"])
+        self.assertIn("Confirmación de seguridad: Cambio de contraseña - Stilo", email.subject)
+
+    def test_appointment_creation_emails(self):
+        mail.outbox = []
+        start_time = timezone.now() + datetime.timedelta(days=2)
+        appointment = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=start_time
+        )
+        self.assertEqual(len(mail.outbox), 2)
+        recipients = [email.to[0] for email in mail.outbox]
+        self.assertIn("client_notify@test.com", recipients)
+        self.assertIn("owner_notify@test.com", recipients)
+        
+        subjects = [email.subject for email in mail.outbox]
+        self.assertIn("Confirmación de Turno - Stilo", subjects)
+        self.assertIn("Nueva Reserva Recibida - Stilo", subjects)
+
+    def test_appointment_cancellation_emails(self):
+        start_time = timezone.now() + datetime.timedelta(days=2)
+        appointment = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=start_time
+        )
+        mail.outbox = []
+        appointment.status = "CANCELLED"
+        appointment.save()
+        
+        self.assertEqual(len(mail.outbox), 2)
+        recipients = [email.to[0] for email in mail.outbox]
+        self.assertIn("client_notify@test.com", recipients)
+        self.assertIn("owner_notify@test.com", recipients)
+        
+        subjects = [email.subject for email in mail.outbox]
+        self.assertIn("Turno Cancelado - Stilo", subjects)
+        self.assertIn("Reserva Cancelada - Stilo", subjects)
+
+    def test_send_reminders_unauthorized(self):
+        # Sin token
+        response = self.client.get(reverse("send_reminders"))
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json(), {"error": "No autorizado"})
+        
+        # Token inválido
+        response = self.client.get(reverse("send_reminders") + "?token=wrong_token")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json(), {"error": "No autorizado"})
+
+    def test_send_reminders_success(self):
+        tomorrow = timezone.localtime(timezone.now()) + datetime.timedelta(days=1)
+        appointment = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=tomorrow,
+            status="CONFIRMED"
+        )
+        
+        today = timezone.localtime(timezone.now())
+        appointment_today = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=today,
+            status="CONFIRMED"
+        )
+        
+        appointment_cancelled = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=tomorrow,
+            status="CANCELLED"
+        )
+        
+        mail.outbox = []
+        
+        url = reverse("send_reminders") + f"?token={settings.REMINDER_TOKEN}"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["sent_count"], 1)
+        
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ["client_notify@test.com"])
+        self.assertIn("Recordatorio de Turno - Stilo", email.subject)
+

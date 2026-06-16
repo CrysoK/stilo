@@ -156,11 +156,60 @@ class Appointment(models.Model):
             minutes=self.service.duration_minutes
         )
 
-        if self.pk is None:
-            # Si el tuerno es nuevo congelamos el precio.
+        is_new = self.pk is None
+        is_cancelled = False
+
+        if self.pk:
+            try:
+                old_instance = Appointment.objects.get(pk=self.pk)
+                if old_instance.status != "CANCELLED" and self.status == "CANCELLED":
+                    is_cancelled = True
+            except Appointment.DoesNotExist:
+                pass
+
+        if is_new:
+            # Si el turno es nuevo congelamos el precio.
             self.amount = self.service.price
 
         super().save(*args, **kwargs)
+
+        # Enviar notificaciones después de guardar exitosamente
+        from core.utils import notify_user
+
+        if is_new:
+            if self.client:
+                notify_user(
+                    user=self.client,
+                    event_type="APPOINTMENT_SUCCESS_CLIENT",
+                    context={"appointment": self},
+                    subject="Confirmación de Turno - Stilo",
+                )
+            owner = self.service.hairdresser.owner
+            if owner:
+                notify_user(
+                    user=owner,
+                    event_type="APPOINTMENT_SUCCESS_OWNER",
+                    context={"appointment": self},
+                    subject="Nueva Reserva Recibida - Stilo",
+                )
+        elif is_cancelled:
+            if self.client:
+                notify_user(
+                    user=self.client,
+                    event_type="APPOINTMENT_CANCELLED_CLIENT",
+                    context={"appointment": self},
+                    subject="Turno Cancelado - Stilo",
+                )
+            owner = self.service.hairdresser.owner
+            if owner:
+                notify_user(
+                    user=owner,
+                    event_type="APPOINTMENT_CANCELLED_OWNER",
+                    context={"appointment": self},
+                    subject="Reserva Cancelada - Stilo",
+                )
+
+
 
     def __str__(self):
         return f"Turno para {self.client} en {self.service.hairdresser.name} a las {self.start_time.strftime('%Y-%m-%d %H:%M')}"

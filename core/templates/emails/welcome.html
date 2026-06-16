@@ -1,0 +1,23 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+<h2>¡Te damos la bienvenida a Stilo, {{ user.first_name }}!</h2>
+<p>Gracias por unirte a nuestra plataforma. Tu cuenta ha sido creada exitosamente con el nombre de usuario <strong>{{ user.username }}</strong>.</p>
+
+<div class="detail-card">
+    {% if user.is_owner %}
+    <p style="margin: 0;">Has registrado tu cuenta como <strong>Dueño de Peluquería</strong>. Ya puedes configurar tu perfil de local, cargar tus horarios y definir tus servicios para comenzar a recibir reservas online.</p>
+    {% else %}
+    <p style="margin: 0;">Has registrado tu cuenta como <strong>Cliente</strong>. Ya puedes explorar los locales disponibles, ver sus calificaciones, ubicar locales cercanos en el mapa y agendar tus turnos de manera simple y rápida.</p>
+    {% endif %}
+</div>
+
+<p>Para comenzar a utilizar la aplicación, haz clic en el siguiente enlace:</p>
+
+<div style="text-align: center;">
+    <a href="{{ login_url }}" class="btn">Iniciar Sesión</a>
+</div>
+
+<p>Si tienes alguna pregunta o inconveniente, no dudes en ponerte en contacto con nuestro equipo.</p>
+<p>Atentamente,<br>El equipo de Stilo</p>
+{% endblock %}

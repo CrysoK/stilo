@@ -1,0 +1,29 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+<h2 style="color: #dc3545;">Turno Cancelado</h2>
+<p>Hola, {{ appointment.client.first_name }}:</p>
+<p>Lamentamos informarte que tu turno en <strong>{{ appointment.service.hairdresser.name }}</strong> ha sido cancelado. A continuación te recordamos los detalles del turno cancelado:</p>
+
+<div class="detail-card" style="border-left-color: #dc3545;">
+    <div class="detail-row">
+        <span class="detail-label">Peluquería:</span>
+        <span class="detail-value">{{ appointment.service.hairdresser.name }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Servicio:</span>
+        <span class="detail-value">{{ appointment.service.name }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Fecha:</span>
+        <span class="detail-value">{{ appointment.start_time|date:"d/m/Y" }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Hora:</span>
+        <span class="detail-value">{{ appointment.start_time|date:"H:i" }} hs</span>
+    </div>
+</div>
+
+<p>Si consideras que esto fue un error o deseas programar una nueva cita, puedes volver a ingresar a nuestra plataforma y elegir otro horario disponible.</p>
+<p>Atentamente,<br>El equipo de Stilo</p>
+{% endblock %}

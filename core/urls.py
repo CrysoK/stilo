@@ -32,6 +32,7 @@ from .views import (
     CustomPasswordChangeView,
     get_service_detail,
     geocode_address_api,
+    send_reminders_view,
 )
 
 urlpatterns = [
@@ -130,4 +131,5 @@ urlpatterns = [
         name="appointment_events",
     ),
     path("api/services/<int:pk>/", get_service_detail, name="service_detail"),
+    path("tasks/send-reminders/", send_reminders_view, name="send_reminders"),
 ]

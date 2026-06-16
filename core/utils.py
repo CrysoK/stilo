@@ -69,4 +69,67 @@ def geocode_address(address):
         return None
     except Exception as e:
         print(f"Error in geocode_address: {e}")
-        return None
+        return None
+
+
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+from django.conf import settings
+import logging
+
+logger = logging.getLogger(__name__)
+
+def send_html_email(subject, template_name, context, recipient_list):
+    """
+    Envía un correo electrónico con contenido HTML y una alternativa de texto plano.
+    """
+    try:
+        html_content = render_to_string(template_name, context)
+        text_content = strip_tags(html_content)
+        
+        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', getattr(settings, 'EMAIL_HOST_USER', 'webmaster@localhost'))
+        
+        email = EmailMultiAlternatives(subject, text_content, from_email, recipient_list)
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+        return True
+    except Exception as e:
+        logger.error(f"Error al enviar correo ({subject}): {e}")
+        return False
+
+
+def notify_user(user, event_type, context, subject, push_title=None, push_message=None):
+    """
+    Función centralizada para despachar notificaciones a través de diferentes canales (Email, Push, etc.).
+    """
+    if not user:
+        return False
+
+    success = False
+
+    # 1. Enviar correo electrónico
+    template_map = {
+        'WELCOME': 'emails/welcome.html',
+        'PASSWORD_CHANGED': 'emails/password_changed.html',
+        'APPOINTMENT_SUCCESS_CLIENT': 'emails/appointment_success_client.html',
+        'APPOINTMENT_SUCCESS_OWNER': 'emails/appointment_success_owner.html',
+        'APPOINTMENT_CANCELLED_CLIENT': 'emails/appointment_cancelled_client.html',
+        'APPOINTMENT_CANCELLED_OWNER': 'emails/appointment_cancelled_owner.html',
+        'APPOINTMENT_REMINDER': 'emails/appointment_reminder.html',
+    }
+
+    template_name = template_map.get(event_type)
+    if template_name and getattr(user, 'email', None):
+        success = send_html_email(
+            subject=subject,
+            template_name=template_name,
+            context=context,
+            recipient_list=[user.email]
+        )
+
+    # 2. Notificaciones Push
+    if push_title and push_message:
+        pass
+
+    return success

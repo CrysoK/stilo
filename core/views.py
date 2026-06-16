@@ -58,7 +58,17 @@ class SignUpView(CreateView):
     def form_valid(self, form):
         user = form.save()
         login(self.request, user)
+        if user.email:
+            login_url = self.request.build_absolute_uri(reverse("login"))
+            from core.utils import notify_user
+            notify_user(
+                user=user,
+                event_type="WELCOME",
+                context={"user": user, "login_url": login_url},
+                subject="¡Te damos la bienvenida a Stilo!",
+            )
         return redirect(self.success_url)
+
 
 
 class CustomLoginView(LoginView):
@@ -824,8 +834,19 @@ class CustomPasswordChangeView(LoginRequiredMixin, PasswordChangeView):
     success_url = reverse_lazy("user_profile")
 
     def form_valid(self, form):
+        response = super().form_valid(form)
+        user = self.request.user
+        if user.email:
+            from core.utils import notify_user
+            notify_user(
+                user=user,
+                event_type="PASSWORD_CHANGED",
+                context={"user": user},
+                subject="Confirmación de seguridad: Cambio de contraseña - Stilo",
+            )
         messages.success(self.request, "Tu contraseña ha sido cambiada exitosamente.")
-        return super().form_valid(form)
+        return response
+
 
 
 def get_service_detail(request, pk):
@@ -923,3 +944,47 @@ def update_appointment_status(request, pk):
 
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+def send_reminders_view(request):
+    """
+    Endpoint para enviar recordatorios de turnos programados para el día siguiente.
+    Protegido por un token/clave secreta.
+    """
+    token = request.GET.get("token") or request.headers.get("X-Reminder-Token")
+    from django.conf import settings
+    if not token or token != settings.REMINDER_TOKEN:
+        return JsonResponse({"error": "No autorizado"}, status=403)
+
+    import datetime
+    from django.utils import timezone
+    from core.utils import notify_user
+
+    # Obtenemos la fecha de mañana en la zona horaria local configurada
+    local_now = timezone.localtime(timezone.now())
+    tomorrow_date = local_now.date() + datetime.timedelta(days=1)
+
+    # Filtrar turnos del día siguiente que estén en estado PENDING o CONFIRMED
+    appointments = Appointment.objects.filter(
+        start_time__date=tomorrow_date,
+        status__in=["PENDING", "CONFIRMED"]
+    ).select_related("client", "service__hairdresser")
+
+    sent_count = 0
+    for app in appointments:
+        if app.client:
+            success = notify_user(
+                user=app.client,
+                event_type="APPOINTMENT_REMINDER",
+                context={"appointment": app},
+                subject="Recordatorio de Turno - Stilo",
+            )
+            if success:
+                sent_count += 1
+
+    return JsonResponse({
+        "success": True,
+        "sent_count": sent_count,
+        "total_filtered": appointments.count()
+    })
+
