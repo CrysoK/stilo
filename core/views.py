@@ -1011,6 +1011,10 @@ def push_subscribe(request):
             return JsonResponse({'error': 'Parámetros incompletos'}, status=400)
 
         from core.models import PushSubscription
+        
+        # Eliminar cualquier suscripción existente con este mismo endpoint para otros usuarios
+        PushSubscription.objects.filter(endpoint=endpoint).exclude(user=request.user).delete()
+
         subscription, created = PushSubscription.objects.update_or_create(
             user=request.user,
             endpoint=endpoint,

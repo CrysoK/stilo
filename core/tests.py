@@ -438,5 +438,49 @@ class WebPushTestCase(TestCase):
         self.assertTrue(response.json()["success"])
         self.assertEqual(PushSubscription.objects.filter(user=self.user).count(), 0)
 
+    def test_push_subscribe_multiuser_endpoint_conflict(self):
+        # 1. Crear otro usuario
+        other_user = User.objects.create_user(
+            username="other_pusher",
+            password="password123",
+            first_name="Other",
+            last_name="Push",
+            email="other@test.com"
+        )
+        
+        # 2. El primer usuario se suscribe
+        self.client.login(username="pusher", password="password123")
+        payload = {
+            "endpoint": "https://push.example.com/shared-browser",
+            "keys": {
+                "p256dh": "some_p256dh_key",
+                "auth": "some_auth_token"
+            }
+        }
+        response = self.client.post(
+            reverse("push_subscribe"),
+            json.dumps(payload),
+            content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(PushSubscription.objects.filter(endpoint=payload["endpoint"]).count(), 1)
+        self.assertEqual(PushSubscription.objects.filter(user=self.user, endpoint=payload["endpoint"]).count(), 1)
+        self.client.logout()
+
+        # 3. El segundo usuario se suscribe al mismo endpoint
+        self.client.login(username="other_pusher", password="password123")
+        response = self.client.post(
+            reverse("push_subscribe"),
+            json.dumps(payload),
+            content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        
+        # 4. Verificar que se eliminó la suscripción del primer usuario y se creó la del segundo
+        self.assertEqual(PushSubscription.objects.filter(endpoint=payload["endpoint"]).count(), 1)
+        self.assertEqual(PushSubscription.objects.filter(user=other_user, endpoint=payload["endpoint"]).count(), 1)
+        self.assertEqual(PushSubscription.objects.filter(user=self.user, endpoint=payload["endpoint"]).count(), 0)
+
+
 
 

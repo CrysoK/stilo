@@ -228,6 +228,8 @@
       })
       .then(data => {
         console.log('Suscripción push eliminada del servidor:', data);
+        localStorage.removeItem('push_synced_user_id');
+        localStorage.removeItem('push_synced_endpoint');
         pushToggle.disabled = false;
         pushStatusText.textContent = "Las notificaciones push están desactivadas en este dispositivo.";
       })

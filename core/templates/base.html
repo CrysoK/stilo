@@ -56,7 +56,7 @@
             </li>
             <li class="nav-item">
               <!-- Logout -->
-              <form action="{% url 'logout' %}" method="post" class="d-inline">
+              <form action="{% url 'logout' %}" method="post" id="logout-form" class="d-inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-link nav-link">Cerrar sesión</button>
               </form>
@@ -124,9 +124,81 @@
           navigator.serviceWorker.register('{% url "service_worker" %}')
             .then(function(registration) {
               console.log('Service Worker registrado con scope:', registration.scope);
+              return navigator.serviceWorker.ready;
+            })
+            .then(function(registration) {
+              return registration.pushManager.getSubscription();
+            })
+            .then(function(subscription) {
+              if (subscription) {
+                // Sincronizar la suscripción si cambió el usuario o el endpoint
+                const currentUserId = "{{ user.id }}";
+                const lastSyncedUser = localStorage.getItem('push_synced_user_id');
+                const lastSyncedEndpoint = localStorage.getItem('push_synced_endpoint');
+                
+                if (lastSyncedUser !== currentUserId || lastSyncedEndpoint !== subscription.endpoint) {
+                  const key = subscription.getKey ? subscription.getKey('p256dh') : null;
+                  const auth = subscription.getKey ? subscription.getKey('auth') : null;
+                  
+                  const payload = {
+                    endpoint: subscription.endpoint,
+                    keys: {
+                      p256dh: key ? btoa(String.fromCharCode.apply(null, new Uint8Array(key))) : null,
+                      auth: auth ? btoa(String.fromCharCode.apply(null, new Uint8Array(auth))) : null
+                    }
+                  };
+                  
+                  return fetch('{% url "push_subscribe" %}', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify(payload)
+                  })
+                  .then(response => {
+                    if (response.ok) {
+                      localStorage.setItem('push_synced_user_id', currentUserId);
+                      localStorage.setItem('push_synced_endpoint', subscription.endpoint);
+                      console.log('Suscripción push sincronizada para el usuario actual.');
+                    }
+                  });
+                }
+              }
             })
             .catch(function(error) {
-              console.error('Error al registrar el Service Worker:', error);
+              console.error('Error al registrar/sincronizar el Service Worker:', error);
+            });
+        });
+
+        // Interceptar el envío de logout para limpiar la suscripción en el backend y localstorage
+        document.getElementById('logout-form')?.addEventListener('submit', function(e) {
+          e.preventDefault();
+          const form = this;
+          
+          navigator.serviceWorker.ready
+            .then(function(registration) {
+              return registration.pushManager.getSubscription();
+            })
+            .then(function(subscription) {
+              if (subscription) {
+                return fetch('{% url "push_unsubscribe" %}', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                  },
+                  body: JSON.stringify({ endpoint: subscription.endpoint })
+                });
+              }
+            })
+            .catch(function(err) {
+              console.error('Error al desuscribir durante logout:', err);
+            })
+            .finally(function() {
+              localStorage.removeItem('push_synced_user_id');
+              localStorage.removeItem('push_synced_endpoint');
+              form.submit();
             });
         });
       }
