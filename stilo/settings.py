@@ -62,10 +62,11 @@ TEMPLATES = [
         "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
-            "context_processors": [
-                "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
-                "django.contrib.messages.context_processors.messages",
+            'context_processors': [
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+                'core.context_processors.vapid_keys',
             ],
         },
     },
@@ -159,5 +160,10 @@ else:
 
 # Token de recordatorios
 REMINDER_TOKEN = config("REMINDER_TOKEN", default="desarrollo_secreto")
+
+# Web Push VAPID keys
+VAPID_PUBLIC_KEY = config("VAPID_PUBLIC_KEY", default="")
+VAPID_PRIVATE_KEY = config("VAPID_PRIVATE_KEY", default="")
+
 
 

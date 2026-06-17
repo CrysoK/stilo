@@ -12,6 +12,7 @@ dependencies = [
     "pillow>=11.2.1",
     "python-decouple>=3.8",
     "requests>=2.32.4",
+    "pywebpush>=1.14.0",
 ]
 [dependency-groups]
 dev = [

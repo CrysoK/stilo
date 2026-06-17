@@ -99,6 +99,104 @@ def send_html_email(subject, template_name, context, recipient_list):
         return False
 
 
+from pywebpush import webpush, WebPushException
+import json
+import logging
+import threading
+from django.db import connection
+from django.utils import timezone
+
+logger = logging.getLogger(__name__)
+
+def send_push_to_subscription(subscription, title, message):
+    """
+    Envía una notificación push a una suscripción específica usando pywebpush.
+    """
+    subscription_info = {
+        "endpoint": subscription.endpoint,
+        "keys": {
+            "p256dh": subscription.p256dh,
+            "auth": subscription.auth
+        }
+    }
+    
+    vapid_private_key = getattr(settings, 'VAPID_PRIVATE_KEY', None)
+    if not vapid_private_key:
+        logger.error("VAPID_PRIVATE_KEY no está configurada en settings.")
+        return
+
+    try:
+        webpush(
+            subscription_info=subscription_info,
+            data=json.dumps({
+                "title": title,
+                "body": message,
+            }),
+            vapid_private_key=vapid_private_key,
+            vapid_claims={
+                "sub": "mailto:contacto@stilo.com",
+            }
+        )
+    except WebPushException as ex:
+        # Si la suscripción ha expirado o es inválida, la removemos de la base de datos (404 Not Found o 410 Gone)
+        if ex.response is not None and ex.response.status_code in [404, 410]:
+            logger.info(f"Removiendo suscripción inactiva/expirada {subscription.id}.")
+            subscription.delete()
+        else:
+            logger.error(f"Error al enviar notificación push a la suscripción {subscription.id}: {ex}")
+    except Exception as ex:
+        logger.error(f"Error inesperado al enviar push a la suscripción {subscription.id}: {ex}")
+
+
+def _send_push_notification_thread(user_id, title, message):
+    """
+    Función de hilo para buscar y enviar notificaciones en segundo plano,
+    liberando la conexión de base de datos al finalizar (excepto en tests).
+    """
+    from core.models import PushSubscription
+    from django.contrib.auth import get_user_model
+    import sys
+    
+    try:
+        User = get_user_model()
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return
+
+        subscriptions = list(PushSubscription.objects.filter(user=user))
+        for sub in subscriptions:
+            send_push_to_subscription(sub, title, message)
+    except Exception as e:
+        logger.error(f"Error en el hilo de notificaciones push para el usuario {user_id}: {e}")
+    finally:
+        # No cerrar la conexión en modo testing para no invalidar la conexión de la suite de pruebas
+        if 'test' not in sys.argv:
+            connection.close()
+
+
+def send_push_notification(user, title, message):
+    """
+    Busca todas las suscripciones activas del usuario y realiza el envío a cada dispositivo en segundo plano.
+    En modo de pruebas, se ejecuta de manera síncrona para evitar bloqueos en SQLite.
+    """
+    if not user or not user.pk:
+        return
+        
+    import sys
+    if 'test' in sys.argv:
+        # Ejecutar sincrónicamente durante las pruebas unitarias
+        _send_push_notification_thread(user.pk, title, message)
+    else:
+        thread = threading.Thread(
+            target=_send_push_notification_thread,
+            args=(user.pk, title, message)
+        )
+        thread.daemon = True
+        thread.start()
+
+
+
 def notify_user(user, event_type, context, subject, push_title=None, push_message=None):
     """
     Función centralizada para despachar notificaciones a través de diferentes canales (Email, Push, etc.).
@@ -129,7 +227,32 @@ def notify_user(user, event_type, context, subject, push_title=None, push_messag
         )
 
     # 2. Notificaciones Push
+    if not push_title or not push_message:
+        appointment = context.get('appointment')
+        if appointment:
+            service_name = appointment.service.name
+            hairdresser_name = appointment.service.hairdresser.name
+            local_time = timezone.localtime(appointment.start_time)
+            time_str = local_time.strftime("%d/%m %H:%M")
+            
+            if event_type == 'APPOINTMENT_SUCCESS_CLIENT':
+                push_title = "Confirmación de Turno"
+                push_message = f"Tu turno para {service_name} en {hairdresser_name} el {time_str} ha sido reservado."
+            elif event_type == 'APPOINTMENT_SUCCESS_OWNER':
+                push_title = "Nueva Reserva"
+                push_message = f"Has recibido una nueva reserva de {appointment.client.first_name or appointment.client.username} para {service_name} el {time_str}."
+            elif event_type == 'APPOINTMENT_CANCELLED_CLIENT':
+                push_title = "Turno Cancelado"
+                push_message = f"Tu turno para {service_name} en {hairdresser_name} el {time_str} ha sido cancelado."
+            elif event_type == 'APPOINTMENT_CANCELLED_OWNER':
+                push_title = "Reserva Cancelada"
+                push_message = f"La reserva de {appointment.client.first_name or appointment.client.username} para {service_name} el {time_str} ha sido cancelada."
+            elif event_type == 'APPOINTMENT_REMINDER':
+                push_title = "Recordatorio de Turno"
+                push_message = f"Recuerda tu turno para {service_name} en {hairdresser_name} mañana el {time_str}."
+
     if push_title and push_message:
-        pass
+        send_push_notification(user, push_title, push_message)
 
     return success
+

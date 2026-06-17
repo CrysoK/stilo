@@ -3,7 +3,8 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from core.utils import geocode_address
-from core.models import Hairdresser
+from core.models import Hairdresser, PushSubscription
+import json
 
 User = get_user_model()
 
@@ -308,4 +309,134 @@ class NotificationTestCase(TestCase):
         email = mail.outbox[0]
         self.assertEqual(email.to, ["client_notify@test.com"])
         self.assertIn("Recordatorio de Turno - Stilo", email.subject)
+
+
+class WebPushTestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(
+            username="pusher",
+            password="password123",
+            first_name="Push",
+            last_name="Test",
+            email="push@test.com"
+        )
+        
+    def test_push_subscribe_unauthenticated(self):
+        response = self.client.post(reverse("push_subscribe"), {})
+        self.assertEqual(response.status_code, 302)
+
+    def test_push_subscribe_invalid_json(self):
+        self.client.login(username="pusher", password="password123")
+        response = self.client.post(
+            reverse("push_subscribe"),
+            "invalid json",
+            content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": "JSON inválido"})
+
+    def test_push_subscribe_missing_params(self):
+        self.client.login(username="pusher", password="password123")
+        response = self.client.post(
+            reverse("push_subscribe"),
+            json.dumps({"endpoint": "https://push.com/123"}),
+            content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": "Parámetros incompletos"})
+
+    def test_push_subscribe_success_and_update(self):
+        self.client.login(username="pusher", password="password123")
+        payload = {
+            "endpoint": "https://push.example.com/12345",
+            "keys": {
+                "p256dh": "some_p256dh_key",
+                "auth": "some_auth_token"
+            }
+        }
+        # Crear suscripción
+        response = self.client.post(
+            reverse("push_subscribe"),
+            json.dumps(payload),
+            content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+        self.assertTrue(response.json()["created"])
+        
+        # Verificar en base de datos
+        sub = PushSubscription.objects.get(user=self.user)
+        self.assertEqual(sub.endpoint, payload["endpoint"])
+        self.assertEqual(sub.p256dh, payload["keys"]["p256dh"])
+        self.assertEqual(sub.auth, payload["keys"]["auth"])
+
+        # Actualizar suscripción
+        payload["keys"]["auth"] = "new_auth_token"
+        response = self.client.post(
+            reverse("push_subscribe"),
+            json.dumps(payload),
+            content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+        self.assertFalse(response.json()["created"]) # Modificada, no creada
+        
+        sub.refresh_from_db()
+        self.assertEqual(sub.auth, "new_auth_token")
+
+    def test_service_worker_serves_js(self):
+        response = self.client.get(reverse("service_worker"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/javascript")
+
+    @patch("core.utils.webpush")
+    def test_send_push_notification_success(self, mock_webpush):
+        sub = PushSubscription.objects.create(
+            user=self.user,
+            endpoint="https://push.example.com/12345",
+            auth="auth_token",
+            p256dh="p256dh_key"
+        )
+        
+        from core.utils import send_push_notification
+        import time
+        
+        with patch.object(settings, "VAPID_PRIVATE_KEY", "dummy_private_key"):
+            send_push_notification(self.user, "Test Title", "Test Message")
+            
+            # Esperamos a que corra el hilo secundario
+            time.sleep(0.5)
+            
+            mock_webpush.assert_called_once()
+            args, kwargs = mock_webpush.call_args
+            self.assertEqual(kwargs["vapid_private_key"], "dummy_private_key")
+            self.assertEqual(kwargs["subscription_info"]["endpoint"], sub.endpoint)
+            self.assertIn("Test Title", kwargs["data"])
+            self.assertIn("Test Message", kwargs["data"])
+
+    def test_push_unsubscribe_unauthenticated(self):
+        response = self.client.post(reverse("push_unsubscribe"), {})
+        self.assertEqual(response.status_code, 302)
+
+    def test_push_unsubscribe_success(self):
+        self.client.login(username="pusher", password="password123")
+        sub = PushSubscription.objects.create(
+            user=self.user,
+            endpoint="https://push.example.com/12345",
+            auth="auth_token",
+            p256dh="p256dh_key"
+        )
+        self.assertEqual(PushSubscription.objects.filter(user=self.user).count(), 1)
+        
+        response = self.client.post(
+            reverse("push_unsubscribe"),
+            json.dumps({"endpoint": "https://push.example.com/12345"}),
+            content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+        self.assertEqual(PushSubscription.objects.filter(user=self.user).count(), 0)
+
+
 

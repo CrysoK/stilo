@@ -33,6 +33,9 @@ from .views import (
     get_service_detail,
     geocode_address_api,
     send_reminders_view,
+    push_subscribe,
+    push_unsubscribe,
+    service_worker,
 )
 
 urlpatterns = [
@@ -132,4 +135,7 @@ urlpatterns = [
     ),
     path("api/services/<int:pk>/", get_service_detail, name="service_detail"),
     path("tasks/send-reminders/", send_reminders_view, name="send_reminders"),
+    path("api/push-subscribe/", push_subscribe, name="push_subscribe"),
+    path("api/push-unsubscribe/", push_unsubscribe, name="push_unsubscribe"),
+    path("service-worker.js", service_worker, name="service_worker"),
 ]

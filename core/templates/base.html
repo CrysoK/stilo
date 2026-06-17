@@ -117,6 +117,21 @@
         }, 5000);
       }
     </script>
+    {% if user.is_authenticated %}
+    <script>
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('{% url "service_worker" %}')
+            .then(function(registration) {
+              console.log('Service Worker registrado con scope:', registration.scope);
+            })
+            .catch(function(error) {
+              console.error('Error al registrar el Service Worker:', error);
+            });
+        });
+      }
+    </script>
+    {% endif %}
     {% block extra_scripts %}{% endblock %}
   </body>
 

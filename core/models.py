@@ -345,3 +345,22 @@ class WorkingHours(models.Model):
     def __str__(self):
         days = dict(self.DAYS_OF_WEEK)
         return f"{days.get(self.day_of_week, 'Día inválido')}: {self.start_time.strftime('%H:%M')} - {self.end_time.strftime('%H:%M')}"
+
+
+class PushSubscription(models.Model):
+    """
+    Guarda la información de suscripción de notificaciones push de un dispositivo del usuario.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="push_subscriptions",
+    )
+    endpoint = models.TextField(verbose_name="Endpoint")
+    auth = models.CharField(max_length=255, verbose_name="Auth")
+    p256dh = models.CharField(max_length=255, verbose_name="P256dh")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Suscripción de {self.user.username} ({self.id})"
+

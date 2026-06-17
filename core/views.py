@@ -988,3 +988,76 @@ def send_reminders_view(request):
         "total_filtered": appointments.count()
     })
 
+
+import json
+from django.views.decorators.http import require_POST
+from django.contrib.auth.decorators import login_required
+import os
+
+@login_required
+@require_POST
+def push_subscribe(request):
+    """
+    Endpoint para registrar o actualizar suscripciones push del frontend.
+    """
+    try:
+        data = json.loads(request.body)
+        endpoint = data.get('endpoint')
+        keys = data.get('keys', {})
+        p256dh = keys.get('p256dh')
+        auth = keys.get('auth')
+
+        if not endpoint or not p256dh or not auth:
+            return JsonResponse({'error': 'Parámetros incompletos'}, status=400)
+
+        from core.models import PushSubscription
+        subscription, created = PushSubscription.objects.update_or_create(
+            user=request.user,
+            endpoint=endpoint,
+            defaults={
+                'auth': auth,
+                'p256dh': p256dh
+            }
+        )
+        return JsonResponse({'success': True, 'created': created})
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'JSON inválido'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+@require_POST
+def push_unsubscribe(request):
+    """
+    Endpoint para eliminar una suscripción push específica del usuario.
+    """
+    try:
+        data = json.loads(request.body)
+        endpoint = data.get('endpoint')
+        if not endpoint:
+            return JsonResponse({'error': 'Parámetros incompletos'}, status=400)
+
+        from core.models import PushSubscription
+        PushSubscription.objects.filter(user=request.user, endpoint=endpoint).delete()
+        return JsonResponse({'success': True})
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'JSON inválido'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def service_worker(request):
+    """
+    Sirve el archivo JS del service worker con el tipo MIME correcto desde la raíz.
+    """
+    from django.conf import settings
+    from django.http import HttpResponse
+    path = os.path.join(settings.BASE_DIR, 'core', 'static', 'js', 'service-worker.js')
+    try:
+        with open(path, 'rb') as f:
+            return HttpResponse(f.read(), content_type='application/javascript')
+    except FileNotFoundError:
+        return HttpResponse('Service worker file not found', status=404)
+
+

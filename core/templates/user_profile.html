@@ -14,6 +14,22 @@
                 <form method="post">
                     {% csrf_token %}
                     {{ form|crispy }}
+                    
+                    <div class="card mb-4 bg-body-tertiary border-0">
+                        <div class="card-body">
+                            <h5 class="card-title">Notificaciones Push</h5>
+                            <div class="form-check form-switch mt-3">
+                                <input class="form-check-input" type="checkbox" id="push-toggle" disabled>
+                                <label class="form-check-label fw-semibold" for="push-toggle">
+                                    Habilitar notificaciones push en este navegador
+                                </label>
+                                <div id="push-status-text" class="form-text text-muted mt-1">
+                                    Comprobando estado de las notificaciones...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="d-flex justify-content-between align-items-center">
                         <button type="submit" class="btn btn-primary">Guardar Cambios</button>
                         <a href="{% url 'password_change' %}" class="btn btn-secondary">Cambiar Contraseña</a>
@@ -23,4 +39,204 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const pushToggle = document.getElementById('push-toggle');
+    const pushStatusText = document.getElementById('push-status-text');
+
+    if (!pushToggle) return;
+
+    // Verificar si el navegador soporta notificaciones push
+    if (!('serviceWorker' in navigator && 'PushManager' in window)) {
+      pushStatusText.textContent = "Tu navegador actual no soporta notificaciones push.";
+      return;
+    }
+
+    // Convertir la llave VAPID Base64URL a Uint8Array
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
+
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    }
+
+    navigator.serviceWorker.ready.then(function(registration) {
+      // Habilitar el checkbox ahora que el Service Worker está listo
+      pushToggle.disabled = false;
+
+      // Obtener el estado actual de la suscripción
+      registration.pushManager.getSubscription().then(function(subscription) {
+        const isSubscribed = !(subscription === null);
+        
+        if (isSubscribed && Notification.permission === 'granted') {
+          pushToggle.checked = true;
+          pushStatusText.textContent = "Las notificaciones push están activadas en este dispositivo.";
+        } else {
+          pushToggle.checked = false;
+          if (Notification.permission === 'denied') {
+            pushStatusText.textContent = "Notificaciones bloqueadas en el navegador. Por favor, habilítalas en la configuración del navegador.";
+            pushToggle.disabled = true;
+          } else {
+            pushStatusText.textContent = "Las notificaciones push están desactivadas en este dispositivo.";
+          }
+        }
+
+        // Manejar el cambio del switch
+        pushToggle.addEventListener('change', function() {
+          pushToggle.disabled = true; // Deshabilitar temporalmente para evitar doble clic
+
+          if (pushToggle.checked) {
+            // Habilitar notificaciones
+            Notification.requestPermission().then(function(permission) {
+              if (permission === 'granted') {
+                subscribeUser(registration);
+              } else {
+                pushToggle.checked = false;
+                pushToggle.disabled = (permission === 'denied');
+                if (permission === 'denied') {
+                  pushStatusText.textContent = "Notificaciones bloqueadas en el navegador. Por favor, habilítalas en la configuración del navegador.";
+                } else {
+                  pushStatusText.textContent = "Permiso de notificaciones denegado.";
+                  pushToggle.disabled = false;
+                }
+              }
+            });
+          } else {
+            // Deshabilitar notificaciones
+            unsubscribeUser(registration);
+          }
+        });
+      });
+    });
+
+    function subscribeUser(registration) {
+      const vapidPublicKey = "{{ VAPID_PUBLIC_KEY }}";
+      if (!vapidPublicKey) {
+        console.warn("VAPID_PUBLIC_KEY no está configurada.");
+        pushToggle.checked = false;
+        pushToggle.disabled = false;
+        pushStatusText.textContent = "Error de configuración: Clave pública VAPID ausente.";
+        return;
+      }
+
+      const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+      registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: applicationServerKey
+      })
+      .then(function(subscription) {
+        console.log('Usuario suscrito a Push:', subscription);
+        sendSubscriptionToServer(subscription);
+      })
+      .catch(function(err) {
+        console.error('Fallo al suscribir al usuario a Push:', err);
+        pushToggle.checked = false;
+        pushToggle.disabled = false;
+        pushStatusText.textContent = "Error al conectar con el servicio de notificaciones.";
+      });
+    }
+
+    function sendSubscriptionToServer(subscription) {
+      const key = subscription.getKey ? subscription.getKey('p256dh') : null;
+      const auth = subscription.getKey ? subscription.getKey('auth') : null;
+      
+      const payload = {
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: key ? btoa(String.fromCharCode.apply(null, new Uint8Array(key))) : null,
+          auth: auth ? btoa(String.fromCharCode.apply(null, new Uint8Array(auth))) : null
+        }
+      };
+
+      fetch('{% url "push_subscribe" %}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify(payload)
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Error al registrar la suscripción en el servidor.');
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log('Suscripción push registrada en el servidor:', data);
+        pushToggle.disabled = false;
+        pushStatusText.textContent = "Las notificaciones push están activadas en este dispositivo.";
+      })
+      .catch(err => {
+        console.error('Error al registrar la suscripción push en el backend:', err);
+        pushToggle.checked = false;
+        pushToggle.disabled = false;
+        pushStatusText.textContent = "Error al guardar la configuración en el servidor.";
+      });
+    }
+
+    function unsubscribeUser(registration) {
+      registration.pushManager.getSubscription().then(function(subscription) {
+        if (subscription) {
+          const endpoint = subscription.endpoint;
+          subscription.unsubscribe().then(function(successful) {
+            if (successful) {
+              console.log('Suscripción cancelada en el navegador.');
+              removeSubscriptionFromServer(endpoint);
+            } else {
+              console.error('Fallo al cancelar la suscripción en el navegador.');
+              pushToggle.checked = true;
+              pushToggle.disabled = false;
+            }
+          }).catch(function(e) {
+            console.error('Error al desuscribir:', e);
+            pushToggle.checked = true;
+            pushToggle.disabled = false;
+          });
+        } else {
+          pushToggle.disabled = false;
+          pushStatusText.textContent = "Las notificaciones push están desactivadas en este dispositivo.";
+        }
+      });
+    }
+
+    function removeSubscriptionFromServer(endpoint) {
+      fetch('{% url "push_unsubscribe" %}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({ endpoint: endpoint })
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Error al eliminar la suscripción del servidor.');
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log('Suscripción push eliminada del servidor:', data);
+        pushToggle.disabled = false;
+        pushStatusText.textContent = "Las notificaciones push están desactivadas en este dispositivo.";
+      })
+      .catch(err => {
+        console.error('Error al eliminar la suscripción push en el backend:', err);
+        pushToggle.disabled = false;
+        pushStatusText.textContent = "Desactivado localmente, pero no se pudo actualizar el servidor.";
+      });
+    }
+  });
+</script>
 {% endblock %}
