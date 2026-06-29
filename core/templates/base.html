@@ -37,18 +37,25 @@
             <li class="nav-item">
               <span class="nav-link">{{ user.username }}</span>
             </li>
-            <li class="nav-item">
-              <a class="nav-link" href="{% url 'my_appointments' %}">Turnos</a>
-            </li>
             {% if user.is_owner %}
             <li class="nav-item">
               <a class="nav-link" href="{% url 'workstation' %}">Hoy</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'owner_appointments' %}">
+                Turnos
+                {% comment %}Badge de solicitudes pendientes{% endcomment %}
+              </a>
             </li>
             <li class="nav-item">
               <a class="nav-link" href="{% url 'owner_stats' %}">Estadísticas</a>
             </li>
             <li class="nav-item">
               <a class="nav-link" href="{% url 'my_hairdresser' %}">Peluquería</a>
+            </li>
+            {% else %}
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'my_appointments' %}">Mis turnos</a>
             </li>
             {% endif %}
             <li class="nav-item">

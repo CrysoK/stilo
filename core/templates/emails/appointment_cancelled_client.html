@@ -22,7 +22,29 @@
         <span class="detail-label">Hora:</span>
         <span class="detail-value">{{ appointment.start_time|date:"H:i" }} hs</span>
     </div>
+    <div class="detail-row">
+        <span class="detail-label">Método de pago:</span>
+        <span class="detail-value">{{ appointment.get_payment_method_display }}</span>
+    </div>
+    {% if appointment.amount_paid > 0 %}
+    <div class="detail-row">
+        <span class="detail-label">Monto pagado online:</span>
+        <span class="detail-value">${{ appointment.amount_paid }}</span>
+    </div>
+    {% endif %}
 </div>
+
+{% if overbooked_refund or underpaid_refund or appointment.amount_paid > 0 %}
+<div style="background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 15px; border-radius: 4px; margin: 20px 0;">
+    {% if overbooked_refund %}
+        <strong>Reembolso automático:</strong> Debido a que el turno ya no estaba disponible por superposición, se ha procesado un reembolso automático de ${{ appointment.amount_paid }} a tu cuenta de MercadoPago.
+    {% elif underpaid_refund %}
+        <strong>Reembolso automático por pago insuficiente:</strong> El pago recibido fue menor al monto requerido (seña o total) para confirmar la reserva. Se ha cancelado la reserva y procesado un reembolso automático de ${{ appointment.amount_paid }} a tu cuenta de MercadoPago.
+    {% else %}
+        <strong>Información de reembolso:</strong> Se había realizado un pago online de ${{ appointment.amount_paid }}. Por favor, ponte en contacto con la peluquería para coordinar la devolución o reprogramación de tu cita.
+    {% endif %}
+</div>
+{% endif %}
 
 <p>Si consideras que esto fue un error o deseas programar una nueva cita, puedes volver a ingresar a nuestra plataforma y elegir otro horario disponible.</p>
 <p>Atentamente,<br>El equipo de Stilo</p>

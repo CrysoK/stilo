@@ -23,7 +23,17 @@
                     <div class="card-body">
                         <h5 class="card-title">{{ current_appointment.client.first_name }} {{ current_appointment.client.last_name }}</h5>
                         <p class="card-text mb-1"><strong>Servicio:</strong> {{ current_appointment.service.name }}</p>
-                        <p class="card-text"><strong>Horario:</strong> {{ current_appointment.start_time|time:"H:i" }} - {{ current_appointment.end_time|time:"H:i" }}</p>
+                        <p class="card-text mb-1"><strong>Horario:</strong> {{ current_appointment.start_time|time:"H:i" }} - {{ current_appointment.end_time|time:"H:i" }}</p>
+                        {% if current_appointment.service.hairdresser.mercadopago_active %}
+                        <div class="mt-2">
+                            {% with pay_info=current_appointment.get_payment_status_info %}
+                            <span class="badge {{ pay_info.badge_class }}"><i class="bi {{ pay_info.icon }}"></i> {{ pay_info.label }}</span>
+                            {% if pay_info.detail %}
+                            <small class="d-block mt-1 text-white-50"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
+                            {% endif %}
+                            {% endwith %}
+                        </div>
+                        {% endif %}
                     </div>
                     <div class="card-footer text-end">
                         <button class="btn btn-light" onclick="handleStatusUpdate({{ current_appointment.pk }}, 'COMPLETED')"><i class="bi bi-check-circle-fill"></i> Marcar como completado</button>
@@ -50,7 +60,17 @@
                     <div class="card-body">
                         <h5 class="card-title">{{ next_appointment.client.first_name }} {{ next_appointment.client.last_name }}</h5>
                         <p class="card-text mb-1"><strong>Servicio:</strong> {{ next_appointment.service.name }}</p>
-                        <p class="card-text"><strong>Horario:</strong> {{ next_appointment.start_time|time:"H:i" }} - {{ next_appointment.end_time|time:"H:i" }}</p>
+                        <p class="card-text mb-1"><strong>Horario:</strong> {{ next_appointment.start_time|time:"H:i" }} - {{ next_appointment.end_time|time:"H:i" }}</p>
+                        {% if next_appointment.service.hairdresser.mercadopago_active %}
+                        <div class="mt-2">
+                            {% with pay_info=next_appointment.get_payment_status_info %}
+                            <span class="badge {{ pay_info.badge_class }}"><i class="bi {{ pay_info.icon }}"></i> {{ pay_info.label }}</span>
+                            {% if pay_info.detail %}
+                            <small class="text-muted d-block mt-1"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
+                            {% endif %}
+                            {% endwith %}
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
                 {% else %}
@@ -68,9 +88,33 @@
             <h4 class="mb-3">Cola de turnos</h4>
             <div id="upcoming-list" class="list-group mb-4">
                 {% for app in upcoming_appointments %}
-                    <div class="list-group-item" data-appointment-id="{{ app.pk }}">
-                        <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.client.first_name }}
-                        <small class="d-block text-muted">{{ app.service.name }}</small>
+                    <div class="list-group-item d-flex justify-content-between align-items-start gap-2" data-appointment-id="{{ app.pk }}">
+                        <div class="flex-grow-1">
+                            <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.client.first_name }} {{ app.client.last_name }}
+                            <small class="d-block text-muted">{{ app.service.name }}</small>
+                            {% if app.status == 'PENDING' and not app.expires_at %}
+                                <span class="badge bg-warning text-dark mt-1"><i class="bi bi-hourglass-split"></i> Pendiente de confirmación</span>
+                            {% endif %}
+                            {% if app.service.hairdresser.mercadopago_active %}
+                                {% with pay_info=app.get_payment_status_info %}
+                                    {% if pay_info.detail %}
+                                        <small class="text-muted d-block mt-1"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
+                                    {% endif %}
+                                {% endwith %}
+                            {% endif %}
+                        </div>
+                        <div class="text-end d-flex flex-column gap-1">
+                            {% if app.status == 'PENDING' and not app.expires_at %}
+                                <button class="btn btn-sm btn-success" onclick="handleStatusUpdate({{ app.pk }}, 'CONFIRMED')" title="Confirmar turno"><i class="bi bi-check-circle"></i> Confirmar</button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="handleStatusUpdate({{ app.pk }}, 'CANCELLED')" title="Rechazar solicitud"><i class="bi bi-x-circle"></i> Rechazar</button>
+                            {% else %}
+                                {% if app.service.hairdresser.mercadopago_active %}
+                                    {% with pay_info=app.get_payment_status_info %}
+                                        <span class="badge {{ pay_info.badge_class }}"><i class="bi {{ pay_info.icon }}"></i> {{ pay_info.label }}</span>
+                                    {% endwith %}
+                                {% endif %}
+                            {% endif %}
+                        </div>
                     </div>
                 {% empty %}
                     <div class="list-group-item text-muted">No hay más turnos en espera.</div>
@@ -81,8 +125,27 @@
             <div id="completed-list" class="list-group">
                 {% for app in completed_appointments %}
                     <div class="list-group-item list-group-item-{{ app.status|lower|slice:'-1'|default:'secondary' }} {% if app.status == 'NO_SHOW' %}list-group-item-danger{% elif app.status == 'COMPLETED' %}list-group-item-success{% endif %}">
-                       <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.client.first_name }}
-                       <span class="badge float-end bg-dark">{{ app.get_status_display }}</span>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                               <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.client.first_name }} {{ app.client.last_name }}
+                               <small class="d-block text-muted">{{ app.service.name }}</small>
+                               {% if app.service.hairdresser.mercadopago_active %}
+                                   {% with pay_info=app.get_payment_status_info %}
+                                       {% if pay_info.detail %}
+                                           <small class="text-muted d-block mt-1"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
+                                       {% endif %}
+                                   {% endwith %}
+                               {% endif %}
+                            </div>
+                            <div class="text-end">
+                               <span class="badge bg-dark mb-1 d-block">{{ app.get_status_display }}</span>
+                               {% if app.service.hairdresser.mercadopago_active %}
+                                   {% with pay_info=app.get_payment_status_info %}
+                                       <span class="badge {{ pay_info.badge_class }}"><i class="bi {{ pay_info.icon }}"></i> {{ pay_info.label }}</span>
+                                   {% endwith %}
+                               {% endif %}
+                            </div>
+                        </div>
                     </div>
                 {% empty %}
                     <div class="list-group-item text-muted">No hay turnos finalizados hoy.</div>
@@ -90,6 +153,22 @@
             </div>
         </div>
     </div>
+
+    {% if pending_requests_count > 0 %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="alert alert-warning border-warning d-flex justify-content-between align-items-center shadow-sm mb-0">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-hourglass-split fs-4 me-2 text-warning"></i>
+                    <span>Tienes <strong>{{ pending_requests_count }}</strong> turno{{ pending_requests_count|pluralize }} a confirmar para los próximos días.</span>
+                </div>
+                <a href="{% url 'owner_appointments' %}?status=PENDING" class="btn btn-warning btn-sm fw-semibold">
+                    Ver y gestionar
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
 

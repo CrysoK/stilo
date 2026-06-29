@@ -84,11 +84,52 @@ document.addEventListener('DOMContentLoaded', function () {
   // --- GESTIÓN DE SERVICIOS ---
   const serviceFormModal = document.getElementById('serviceFormModal');
   if (serviceFormModal) {
+    const form = serviceFormModal.querySelector('#serviceForm');
+    
+    function toggleModalFields() {
+      if (!form) return;
+      const overrideDepositInput = form.querySelector('[name="override_deposit"]');
+      const depositTypeWrapper = form.querySelector('[name="deposit_type"]')?.closest('.mb-3');
+      const depositValueWrapper = form.querySelector('[name="deposit_value"]')?.closest('.mb-3');
+      
+      const overridePaymentModesInput = form.querySelector('[name="override_payment_modes"]');
+      const allowPrepaymentWrapper = form.querySelector('[name="allow_prepayment"]')?.closest('.mb-3');
+      const allowOnSitePaymentWrapper = form.querySelector('[name="allow_on_site_payment"]')?.closest('.mb-3');
+      
+      if (overrideDepositInput && depositTypeWrapper && depositValueWrapper) {
+        if (overrideDepositInput.checked) {
+          depositTypeWrapper.style.display = 'block';
+          depositValueWrapper.style.display = 'block';
+        } else {
+          depositTypeWrapper.style.display = 'none';
+          depositValueWrapper.style.display = 'none';
+        }
+      }
+      
+      if (overridePaymentModesInput && allowPrepaymentWrapper && allowOnSitePaymentWrapper) {
+        if (overridePaymentModesInput.checked) {
+          allowPrepaymentWrapper.style.display = 'block';
+          allowOnSitePaymentWrapper.style.display = 'block';
+        } else {
+          allowPrepaymentWrapper.style.display = 'none';
+          allowOnSitePaymentWrapper.style.display = 'none';
+        }
+      }
+    }
+
+    const overrideDepositInput = form.querySelector('[name="override_deposit"]');
+    const overridePaymentModesInput = form.querySelector('[name="override_payment_modes"]');
+    if (overrideDepositInput) {
+      overrideDepositInput.addEventListener('change', toggleModalFields);
+    }
+    if (overridePaymentModesInput) {
+      overridePaymentModesInput.addEventListener('change', toggleModalFields);
+    }
+
     serviceFormModal.addEventListener('show.bs.modal', function(event) {
       const button = event.relatedTarget;
       const mode = button.getAttribute('data-mode');
       const modalTitle = this.querySelector('.modal-title');
-      const form = this.querySelector('#serviceForm');
       const nameInput = form.querySelector('[name="name"]');
       const descriptionInput = form.querySelector('[name="description"]');
       const priceInput = form.querySelector('[name="price"]');
@@ -102,6 +143,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (mode === 'create') {
         modalTitle.textContent = 'Crear nuevo servicio';
         form.action = "{% url 'service_create' %}";
+        toggleModalFields();
       } else if (mode === 'edit') {
         const serviceId = button.getAttribute('data-service-id');
         modalTitle.textContent = 'Editar servicio';
@@ -114,10 +156,25 @@ document.addEventListener('DOMContentLoaded', function () {
             priceInput.value = data.price;
             durationInput.value = data.duration_minutes;
             descriptionInput.value = data.description || '';
+            
+            const overrideDepositInput = form.querySelector('[name="override_deposit"]');
+            const depositTypeInput = form.querySelector('[name="deposit_type"]');
+            const depositValueInput = form.querySelector('[name="deposit_value"]');
+            const overridePaymentModesInput = form.querySelector('[name="override_payment_modes"]');
+            const allowPrepaymentInput = form.querySelector('[name="allow_prepayment"]');
+            const allowOnSitePaymentInput = form.querySelector('[name="allow_on_site_payment"]');
+            
+            if (overrideDepositInput) overrideDepositInput.checked = data.override_deposit;
+            if (depositTypeInput) depositTypeInput.value = data.deposit_type;
+            if (depositValueInput) depositValueInput.value = data.deposit_value;
+            if (overridePaymentModesInput) overridePaymentModesInput.checked = data.override_payment_modes;
+            if (allowPrepaymentInput) allowPrepaymentInput.checked = data.allow_prepayment;
+            if (allowOnSitePaymentInput) allowOnSitePaymentInput.checked = data.allow_on_site_payment;
+            
+            toggleModalFields();
           })
           .catch(error => {
             console.error('Error:', error);
-            // Idealmente, aquí se mostraría un mensaje de error al usuario
           });
       }
     });

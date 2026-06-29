@@ -97,7 +97,11 @@
                data-service-id="{{ service.pk }}"
                data-service-name="{{ service.name }}"
                data-service-duration="{{ service.duration_minutes }}"
-               data-service-price="{{ service.price|floatformat:2 }}">
+               data-service-price="{{ service.price|floatformat:2 }}"
+               data-requires-deposit="{{ service.hairdresser.requires_deposit|yesno:'true,false' }}"
+               data-deposit-amount="{{ service.required_deposit_amount|floatformat:2 }}"
+               data-allow-prepayment="{{ service.payment_modes.allow_prepayment|yesno:'true,false' }}"
+               data-allow-on-site-payment="{{ service.payment_modes.allow_on_site_payment|yesno:'true,false' }}">
               <div class="d-flex w-100 justify-content-between align-items-center">
                 <div>
                   <h6 class="mb-1">{{ service.name }}</h6>
@@ -225,6 +229,130 @@
     let selectedService = null;
     const serviceListContainer = document.getElementById('service-list');
 
+    function populatePaymentOptions(service) {
+      const listContainer = document.getElementById('payment-options-list');
+      const hiddenInput = document.querySelector('#appointmentForm [name="payment_method"]');
+      if (!listContainer || !hiddenInput) return;
+
+      listContainer.innerHTML = '';
+      
+      const price = parseFloat(service.price);
+      const depositAmount = parseFloat(service.depositAmount) || 0;
+      const requiresDeposit = service.requiresDeposit === 'true' && depositAmount > 0;
+      const allowPrepayment = service.allowPrepayment === 'true';
+      const allowOnSitePayment = service.allowOnSitePayment === 'true';
+
+      let optionsHTML = '';
+      let defaultMethod = 'CASH';
+
+      // Caso 1: Ambas formas de pago permitidas
+      if (allowPrepayment && allowOnSitePayment) {
+        if (requiresDeposit) {
+          optionsHTML += `
+            <label class="list-group-item d-flex align-items-center p-3 border rounded mb-2" style="cursor: pointer;">
+              <input class="form-check-input me-3" type="radio" name="payment_option_radio" value="CASH" checked>
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center justify-content-between">
+                  <span class="fw-bold">Abonar seña obligatoria de $${depositAmount.toFixed(2)}</span>
+                  <img src="{% static 'img/mp.svg' %}" alt="Mercado Pago" style="height: 30px;">
+                </div>
+                <small class="text-body-secondary">Pagas la seña online ahora y el saldo restante en el local.</small>
+              </div>
+            </label>
+            <label class="list-group-item d-flex align-items-center p-3 border rounded mb-2" style="cursor: pointer;">
+              <input class="form-check-input me-3" type="radio" name="payment_option_radio" value="FULL">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center justify-content-between">
+                  <span class="fw-bold">Abonar el servicio completo de $${price.toFixed(2)}</span>
+                  <img src="{% static 'img/mp.svg' %}" alt="Mercado Pago" style="height: 30px;">
+                </div>
+                <small class="text-body-secondary">Pagas el 100% online ahora por MercadoPago.</small>
+              </div>
+            </label>
+          `;
+          defaultMethod = 'CASH';
+        } else {
+          optionsHTML += `
+            <label class="list-group-item d-flex align-items-center p-3 border rounded mb-2" style="cursor: pointer;">
+              <input class="form-check-input me-3" type="radio" name="payment_option_radio" value="CASH" checked>
+              <div>
+                <span class="d-block fw-bold">Reservar y pagar en el local</span>
+                <small class="text-body-secondary">Confirmación directa. Abonas $${price.toFixed(2)} en el local.</small>
+              </div>
+            </label>
+            <label class="list-group-item d-flex align-items-center p-3 border rounded mb-2" style="cursor: pointer;">
+              <input class="form-check-input me-3" type="radio" name="payment_option_radio" value="FULL">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center justify-content-between">
+                  <span class="fw-bold">Abonar el servicio completo de $${price.toFixed(2)}</span>
+                  <img src="{% static 'img/mp.svg' %}" alt="Mercado Pago" style="height: 30px;">
+                </div>
+                <small class="text-body-secondary">Pagas el 100% online ahora por MercadoPago.</small>
+              </div>
+            </label>
+          `;
+          defaultMethod = 'CASH';
+        }
+      } 
+      // Caso 2: Solo Pago Adelantado
+      else if (allowPrepayment && !allowOnSitePayment) {
+        optionsHTML += `
+          <label class="list-group-item d-flex align-items-center p-3 border rounded mb-2" style="cursor: pointer;">
+            <input class="form-check-input me-3" type="radio" name="payment_option_radio" value="FULL" checked>
+            <div class="flex-grow-1">
+              <div class="d-flex align-items-center justify-content-between">
+                <span class="fw-bold">Abonar el servicio completo de $${price.toFixed(2)}</span>
+                <img src="{% static 'img/mp.svg' %}" alt="Mercado Pago" style="height: 30px;">
+              </div>
+              <small class="text-body-secondary">Pago 100% online obligatorio para reservar.</small>
+            </div>
+          </label>
+        `;
+        defaultMethod = 'FULL';
+      } 
+      // Caso 3: Solo Pago en el local
+      else if (!allowPrepayment && allowOnSitePayment) {
+        if (requiresDeposit) {
+          optionsHTML += `
+            <label class="list-group-item d-flex align-items-center p-3 border rounded mb-2" style="cursor: pointer;">
+              <input class="form-check-input me-3" type="radio" name="payment_option_radio" value="CASH" checked>
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center justify-content-between">
+                  <span class="fw-bold">Abonar seña obligatoria de $${depositAmount.toFixed(2)}</span>
+                  <img src="{% static 'img/mp.svg' %}" alt="Mercado Pago" style="height: 30px;">
+                </div>
+                <small class="text-body-secondary">Pagas la seña online ahora y el saldo restante en el local.</small>
+              </div>
+            </label>
+          `;
+          defaultMethod = 'CASH';
+        } else {
+          optionsHTML += `
+            <label class="list-group-item d-flex align-items-center p-3 border rounded mb-2" style="cursor: pointer;">
+              <input class="form-check-input me-3" type="radio" name="payment_option_radio" value="CASH" checked>
+              <div>
+                <span class="d-block fw-bold">Reservar y pagar en el local</span>
+                <small class="text-body-secondary">Confirmación directa. Abonas $${price.toFixed(2)} en el local.</small>
+              </div>
+            </label>
+          `;
+          defaultMethod = 'CASH';
+        }
+      }
+
+      listContainer.innerHTML = optionsHTML;
+      hiddenInput.value = defaultMethod;
+
+      const radios = listContainer.querySelectorAll('input[name="payment_option_radio"]');
+      radios.forEach(radio => {
+        radio.addEventListener('change', function() {
+          if (this.checked) {
+            hiddenInput.value = this.value;
+          }
+        });
+      });
+    }
+
     if (serviceListContainer) {
       serviceListContainer.addEventListener('click', function(e) {
         e.preventDefault();
@@ -237,6 +365,10 @@
             name: serviceItem.dataset.serviceName,
             duration: parseInt(serviceItem.dataset.serviceDuration),
             price: serviceItem.dataset.servicePrice,
+            requiresDeposit: serviceItem.dataset.requiresDeposit,
+            depositAmount: serviceItem.dataset.depositAmount,
+            allowPrepayment: serviceItem.dataset.allowPrepayment,
+            allowOnSitePayment: serviceItem.dataset.allowOnSitePayment,
         };
       });
     }
@@ -313,6 +445,7 @@
           document.querySelector('#appointmentForm [name="service"]').value = selectedService.id;
           document.querySelector('#appointmentForm [name="start_time"]').value = isoDateTime;
 
+          populatePaymentOptions(selectedService);
           appointmentModal.show();
         } else {
           showPopover(null, "La peluquería no atiende en este horario.", info.jsEvent);

@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}Gestión de Turnos{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0">Gestión de Turnos</h2>
+    {% if pending_count > 0 %}
+    <a href="{% url 'owner_appointments' %}?status=PENDING" class="btn btn-warning">
+        <i class="bi bi-hourglass-split"></i> {{ pending_count }} solicitud{{ pending_count|pluralize:"" }} pendiente{{ pending_count|pluralize:"s" }}
+    </a>
+    {% endif %}
+</div>
+
+{# Filtros #}
+<form method="get" class="row g-2 mb-4">
+    <div class="col-sm-auto">
+        <select name="status" class="form-select" onchange="this.form.submit()">
+            <option value="">Todos los estados</option>
+            {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-sm-auto">
+        <input type="month" name="month" class="form-control" value="{{ month_filter }}" onchange="this.form.submit()">
+    </div>
+    {% if status_filter or month_filter %}
+    <div class="col-sm-auto">
+        <a href="{% url 'owner_appointments' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-x-circle"></i> Limpiar filtros
+        </a>
+    </div>
+    {% endif %}
+</form>
+
+{% if appointments %}
+<div class="list-group">
+    {% for app in appointments %}
+    <div class="list-group-item list-group-item-action" data-appointment-id="{{ app.pk }}">
+        <div class="d-flex justify-content-between align-items-start gap-3">
+            <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <strong>{{ app.start_time|date:"d/m/Y H:i" }}</strong>
+                    {# Badge de estado del turno #}
+                    {% if app.status == 'PENDING' %}
+                        {% if not app.expires_at %}
+                        <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split"></i> Pendiente confirmación</span>
+                        {% else %}
+                        <span class="badge bg-secondary"><i class="bi bi-clock"></i> Pago en proceso</span>
+                        {% endif %}
+                    {% elif app.status == 'CONFIRMED' %}
+                        <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> Confirmado</span>
+                    {% elif app.status == 'COMPLETED' %}
+                        <span class="badge bg-primary"><i class="bi bi-check-all"></i> Completado</span>
+                    {% elif app.status == 'CANCELLED' %}
+                        <span class="badge bg-danger"><i class="bi bi-x-circle-fill"></i> Cancelado</span>
+                    {% elif app.status == 'NO_SHOW' %}
+                        <span class="badge bg-dark"><i class="bi bi-person-x-fill"></i> No se presentó</span>
+                    {% endif %}
+                    {# Badge de pago #}
+                    {% with pay_info=app.get_payment_status_info %}
+                    <span class="badge {{ pay_info.badge_class }}"><i class="bi {{ pay_info.icon }}"></i> {{ pay_info.label }}</span>
+                    {% endwith %}
+                </div>
+                <div class="text-muted">
+                    <i class="bi bi-person"></i>
+                    <strong>{{ app.client.first_name }} {{ app.client.last_name }}</strong>
+                    <span class="text-muted small">({{ app.client.email }})</span>
+                </div>
+                <div class="text-muted small">
+                    <i class="bi bi-scissors"></i> {{ app.service.name }} &mdash;
+                    <i class="bi bi-clock"></i> {{ app.start_time|time:"H:i" }}–{{ app.end_time|time:"H:i" }} &mdash;
+                    <i class="bi bi-currency-dollar"></i> ${{ app.amount }}
+                </div>
+                {% with pay_info=app.get_payment_status_info %}
+                {% if pay_info.detail %}
+                <small class="text-muted"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
+                {% endif %}
+                {% endwith %}
+                {% if app.review %}
+                <div class="mt-1">
+                    <small class="text-muted"><i class="bi bi-star-fill text-warning"></i> {{ app.review.rating }}/5
+                    {% if app.review.comment %}&mdash; "{{ app.review.comment|truncatechars:80 }}"{% endif %}</small>
+                </div>
+                {% endif %}
+            </div>
+            {# Acciones según estado #}
+            <div class="d-flex flex-column gap-1 text-end" style="min-width: 130px;">
+                {% if app.status == 'PENDING' and not app.expires_at %}
+                <button class="btn btn-sm btn-success" onclick="handleStatusUpdate({{ app.pk }}, 'CONFIRMED')">
+                    <i class="bi bi-check-circle"></i> Confirmar
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="handleStatusUpdate({{ app.pk }}, 'CANCELLED')">
+                    <i class="bi bi-x-circle"></i> Rechazar
+                </button>
+                {% elif app.status == 'CONFIRMED' %}
+                <button class="btn btn-sm btn-outline-secondary" onclick="handleStatusUpdate({{ app.pk }}, 'CANCELLED')">
+                    <i class="bi bi-x-circle"></i> Cancelar
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{# Paginación #}
+{% if is_paginated %}
+<nav class="mt-4" aria-label="Paginación de turnos">
+    <ul class="pagination justify-content-center">
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if month_filter %}&month={{ month_filter }}{% endif %}">
+                &laquo; Anterior
+            </a>
+        </li>
+        {% endif %}
+        <li class="page-item disabled">
+            <span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+        </li>
+        {% if page_obj.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if month_filter %}&month={{ month_filter }}{% endif %}">
+                Siguiente &raquo;
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="text-center py-5 text-muted">
+    <i class="bi bi-calendar-x" style="font-size: 3rem;"></i>
+    <p class="mt-3">No hay turnos que coincidan con los filtros seleccionados.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const csrfToken = '{{ csrf_token }}';
+const statusUpdateUrlTemplate = `{% url 'update_appointment_status' 0 %}`;
+
+function handleStatusUpdate(appointmentId, newStatus) {
+    const url = statusUpdateUrlTemplate.replace('0', appointmentId);
+    const formData = new FormData();
+    formData.append('status', newStatus);
+
+    // Mostrar indicador de carga
+    const button = event.target.closest('button');
+    const originalText = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Procesando...';
+
+    fetch(url, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        body: new URLSearchParams(formData)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert(`Error: ${data.message}`);
+            button.disabled = false;
+            button.innerHTML = originalText;
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('Error de conexión.');
+        button.disabled = false;
+        button.innerHTML = originalText;
+    });
+}
+</script>
+{% endblock %}

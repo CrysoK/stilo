@@ -9,6 +9,7 @@ from .models import (
     HairdresserImage,
     Offer,
     WorkingHours,
+    PaymentTransaction,
 )
 
 # Register your models here.
@@ -80,3 +81,20 @@ admin.site.register(Service)
 admin.site.register(Review)
 admin.site.register(Offer)
 admin.site.register(HairdresserImage)
+
+
+@admin.register(PaymentTransaction)
+class PaymentTransactionAdmin(admin.ModelAdmin):
+    list_display = ("id", "appointment", "payment_id", "amount", "status", "created_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("payment_id", "appointment__id", "appointment__client__username")
+    readonly_fields = ("appointment", "payment_id", "amount", "status", "created_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

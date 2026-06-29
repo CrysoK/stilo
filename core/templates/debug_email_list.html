@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Previsualización de Correos - Stilo{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar: Selección de Plantillas y Opciones -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 mb-4 bg-dark bg-gradient text-white">
+            <div class="card-body">
+                <h4 class="card-title text-warning border-bottom border-secondary pb-2 mb-3">
+                    <i class="bi bi-envelope-fill me-2"></i>Plantillas de Correo
+                </h4>
+                <div class="list-group list-group-flush mb-4 rounded border border-secondary overflow-hidden">
+                    {% for key, path, label in templates %}
+                    <button type="button" 
+                            class="list-group-item list-group-item-action bg-dark text-white border-secondary template-btn {% if forloop.first %}active bg-warning text-dark border-warning{% endif %}"
+                            data-template="{{ key }}">
+                        <div class="fw-bold">{{ label }}</div>
+                        <small class="text-secondary opacity-75 d-block">{{ path }}</small>
+                    </button>
+                    {% endfor %}
+                </div>
+
+                <h5 class="text-warning border-bottom border-secondary pb-2 mb-3">
+                    <i class="bi bi-sliders me-2"></i>Simular Datos de Pago
+                </h5>
+                <div class="mb-3">
+                    <label class="form-label small text-secondary fw-bold">CONFIGURACIÓN DE PAGO</label>
+                    <select class="form-select bg-dark text-white border-secondary" id="payment-state-select">
+                        <option value="full" selected>Pago Completo Adelantado (MP)</option>
+                        <option value="deposit">Seña Pagada + Saldo en Local (MP)</option>
+                        <option value="cash">Pago Completo en el Local (Efectivo)</option>
+                    </select>
+                </div>
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input bg-dark border-secondary" type="checkbox" id="overbooked-refund-check">
+                    <label class="form-check-label text-light" for="overbooked-refund-check">
+                        Simular Reembolso por Sobreventa (Solo Cancelaciones)
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content: El iframe de previsualización -->
+    <div class="col-md-8">
+        <div class="card shadow-sm border-0 bg-dark text-white h-100" style="min-height: 600px;">
+            <div class="card-header bg-dark border-secondary d-flex justify-content-between align-items-center py-3">
+                <h5 class="mb-0 text-light">
+                    <i class="bi bi-eye-fill text-warning me-2"></i>Vista Previa de Correo
+                </h5>
+                <a href="#" id="open-new-tab" target="_blank" class="btn btn-sm btn-outline-warning">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>Abrir en nueva pestaña
+                </a>
+            </div>
+            <div class="card-body p-0 d-flex flex-column h-100 bg-secondary-subtle">
+                <iframe id="preview-iframe" class="w-100 flex-grow-1 border-0 bg-white" style="height: 600px; border-radius: 0 0 8px 8px;"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const buttons = document.querySelectorAll(".template-btn");
+        const paymentSelect = document.getElementById("payment-state-select");
+        const overbookedCheck = document.getElementById("overbooked-refund-check");
+        const iframe = document.getElementById("preview-iframe");
+        const openNewTabLink = document.getElementById("open-new-tab");
+
+        let activeTemplate = buttons[0].dataset.template;
+
+        function updateIframe() {
+            const paymentState = paymentSelect.value;
+            const overbookedRefund = overbookedCheck.checked ? "true" : "false";
+            
+            // Construir URL de la vista de render
+            // Usamos interpolación de Django si quisiéramos, pero es más fácil reconstruir la URL
+            const url = `/debug/emails/${activeTemplate}/?payment_state=${paymentState}&overbooked_refund=${overbookedRefund}`;
+            
+            iframe.src = url;
+            openNewTabLink.href = url;
+        }
+
+        buttons.forEach(button => {
+            button.addEventListener("click", function() {
+                buttons.forEach(btn => btn.classList.remove("active", "bg-warning", "text-dark", "border-warning"));
+                this.classList.add("active", "bg-warning", "text-dark", "border-warning");
+                activeTemplate = this.dataset.template;
+                updateIframe();
+            });
+        });
+
+        paymentSelect.addEventListener("change", updateIframe);
+        overbookedCheck.addEventListener("change", updateIframe);
+
+        // Cargar iframe inicial
+        updateIframe();
+    });
+</script>
+{% endblock %}

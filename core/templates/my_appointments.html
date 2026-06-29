@@ -43,7 +43,28 @@
             <h5 class="mb-1">{{ app.service.name }}</h5>
             <p class="mb-1"><strong>En:</strong> {{ app.service.hairdresser.name }}</p>
             <p class="mb-1"><strong>Fecha:</strong> {{ app.start_time|date:"d/m/Y H:i" }} hs</p>
-            <small><strong>Estado:</strong> {{ app.get_status_display }}</small>
+            <p class="mb-1"><strong>Precio:</strong> ${{ app.amount }}</p>
+            <div class="d-flex flex-wrap gap-2 align-items-center mt-1">
+                {% if app.status == 'PENDING' %}
+                  <span class="badge bg-warning text-dark"><i class="bi bi-clock-fill"></i> Pendiente</span>
+                {% elif app.status == 'CONFIRMED' %}
+                  <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> Confirmado</span>
+                {% elif app.status == 'COMPLETED' %}
+                  <span class="badge bg-primary"><i class="bi bi-check-all"></i> Completado</span>
+                {% elif app.status == 'CANCELLED' %}
+                  <span class="badge bg-danger"><i class="bi bi-x-circle-fill"></i> Cancelado</span>
+                {% elif app.status == 'NO_SHOW' %}
+                  <span class="badge bg-dark"><i class="bi bi-person-x-fill"></i> No se presentó</span>
+                {% endif %}
+                {% with pay_info=app.get_payment_status_info %}
+                  <span class="badge {{ pay_info.badge_class }}"><i class="bi {{ pay_info.icon }}"></i> {{ pay_info.label }}</span>
+                {% endwith %}
+            </div>
+            {% with pay_info=app.get_payment_status_info %}
+              {% if pay_info.detail %}
+                <small class="text-muted d-block mt-1"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
+              {% endif %}
+            {% endwith %}
         </div>
         <div id="review-controls-{{ app.pk }}">
             {% if app.status == 'COMPLETED' %}

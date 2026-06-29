@@ -10,6 +10,7 @@ from .views import (
     ServiceUpdateView,
     ServiceDeleteView,
     AppointmentListView,
+    OwnerAppointmentListView,
     ReviewCreateView,
     ReviewUpdateView,
     ReviewDeleteView,
@@ -36,7 +37,16 @@ from .views import (
     push_subscribe,
     push_unsubscribe,
     service_worker,
+    mercadopago_auth_redirect,
+    mercadopago_callback,
+    mercadopago_unlink,
+    cancel_expired_appointments_view,
+    email_preview_list,
+    email_preview_render,
+    retry_refunds_cron_view,
+    refresh_mercadopago_tokens_cron_view,
 )
+from .webhooks import mercadopago_webhook
 
 urlpatterns = [
     # URLs de Autenticación y Home
@@ -51,6 +61,11 @@ urlpatterns = [
         "workstation/appointment/<int:pk>/update-status/",
         update_appointment_status,
         name="update_appointment_status",
+    ),
+    path(
+        "my-hairdresser/appointments/",
+        OwnerAppointmentListView.as_view(),
+        name="owner_appointments",
     ),
     path(
         "my-hairdresser/",
@@ -135,7 +150,41 @@ urlpatterns = [
     ),
     path("api/services/<int:pk>/", get_service_detail, name="service_detail"),
     path("tasks/send-reminders/", send_reminders_view, name="send_reminders"),
+    path(
+        "tasks/cancel-expired/",
+        cancel_expired_appointments_view,
+        name="cancel_expired_appointments_endpoint",
+    ),
+    path(
+        "tasks/retry-refunds/",
+        retry_refunds_cron_view,
+        name="retry_refunds_cron_endpoint",
+    ),
+    path(
+        "tasks/refresh-tokens/",
+        refresh_mercadopago_tokens_cron_view,
+        name="refresh_mercadopago_tokens_cron_endpoint",
+    ),
     path("api/push-subscribe/", push_subscribe, name="push_subscribe"),
     path("api/push-unsubscribe/", push_unsubscribe, name="push_unsubscribe"),
     path("service-worker.js", service_worker, name="service_worker"),
+    path(
+        "webhooks/mercadopago/<int:hairdresser_id>/",
+        mercadopago_webhook,
+        name="mercadopago_webhook",
+    ),
+    path(
+        "mercadopago/connect/",
+        mercadopago_auth_redirect,
+        name="mercadopago_auth_redirect",
+    ),
+    path("mercadopago/callback/", mercadopago_callback, name="mercadopago_callback"),
+    path("mercadopago/unlink/", mercadopago_unlink, name="mercadopago_unlink"),
+    # URLs de previsualización de correos
+    path("debug/emails/", email_preview_list, name="email_preview_list"),
+    path(
+        "debug/emails/<str:template_name>/",
+        email_preview_render,
+        name="email_preview_render",
+    ),
 ]

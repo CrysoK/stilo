@@ -54,7 +54,48 @@ class ServiceForm(forms.ModelForm):
 
     class Meta:
         model = Service
-        fields = ["name", "description", "price", "duration_minutes"]
+        fields = [
+            "name",
+            "description",
+            "price",
+            "duration_minutes",
+            "override_deposit",
+            "deposit_type",
+            "deposit_value",
+            "override_payment_modes",
+            "allow_prepayment",
+            "allow_on_site_payment",
+        ]
+
+    def clean(self):
+        cleaned_data = super().clean()
+        override_deposit = cleaned_data.get("override_deposit")
+        deposit_type = cleaned_data.get("deposit_type")
+        deposit_value = cleaned_data.get("deposit_value")
+        override_payment_modes = cleaned_data.get("override_payment_modes")
+        allow_prepayment = cleaned_data.get("allow_prepayment")
+        allow_on_site_payment = cleaned_data.get("allow_on_site_payment")
+
+        if override_payment_modes:
+            if not allow_prepayment and not allow_on_site_payment:
+                self.add_error(
+                    "override_payment_modes",
+                    "Debe permitir al menos el pago adelantado o el pago en el local si sobrescribe las formas de pago.",
+                )
+
+        if override_deposit:
+            if deposit_value is not None:
+                if deposit_value < 0:
+                    self.add_error(
+                        "deposit_value", "El valor de la seña no puede ser negativo."
+                    )
+                if deposit_type == "PERCENTAGE" and deposit_value > 100:
+                    self.add_error(
+                        "deposit_value",
+                        "El porcentaje de la seña no puede superar el 100%.",
+                    )
+
+        return cleaned_data
 
 
 class HairdresserImageForm(forms.ModelForm):
@@ -132,10 +173,11 @@ class AppointmentForm(forms.ModelForm):
         # Los campos se poblarán con JS, por lo que los ocultamos.
         self.fields["service"].widget = forms.HiddenInput()
         self.fields["start_time"].widget = forms.HiddenInput()
+        self.fields["payment_method"].widget = forms.HiddenInput()
 
     class Meta:
         model = Appointment
-        fields = ["service", "start_time"]
+        fields = ["service", "start_time", "payment_method"]
 
     def clean_start_time(self):
         """
@@ -174,12 +216,20 @@ class AppointmentForm(forms.ModelForm):
                 code="outside_working_hours",
             )
 
-        # 2. Comprobar si hay turnos que se superponen
+        # 2. Comprobar si hay turnos que se superponen.
+        # Se consideran como "ocupados" los turnos CONFIRMED, los PENDING
+        # que no tienen expires_at (= solicitudes esperando confirmación del dueño),
+        # y los PENDING con expires_at que aún no han expirado.
+        from django.db.models import Q
+
         overlapping_appointments = Appointment.objects.filter(
             service__hairdresser=hairdresser,
-            status__in=["PENDING", "CONFIRMED"],
             start_time__lt=end_time,
             end_time__gt=start_time,
+        ).filter(
+            Q(status="CONFIRMED")
+            | Q(status="PENDING", expires_at__isnull=True)
+            | Q(status="PENDING", expires_at__gt=timezone.now())
         )
 
         if overlapping_appointments.exists():
@@ -187,6 +237,22 @@ class AppointmentForm(forms.ModelForm):
                 "El horario seleccionado ya no está disponible. Por favor, elija otro.",
                 code="overlap",
             )
+
+        # 3. Validar método de pago
+        payment_method = cleaned_data.get("payment_method")
+        if payment_method:
+            temp_app = Appointment(service=service)
+            modes = temp_app.get_payment_modes()
+            if payment_method == "FULL" and not modes["allow_prepayment"]:
+                raise ValidationError(
+                    "El pago completo por adelantado no está disponible para este servicio.",
+                    code="prepayment_disabled",
+                )
+            if payment_method == "CASH" and not modes["allow_on_site_payment"]:
+                raise ValidationError(
+                    "El pago en el local no está disponible para este servicio. Debe abonar el 100% online.",
+                    code="cash_disabled",
+                )
 
         return cleaned_data
 
@@ -199,6 +265,12 @@ class HairdresserSetupForm(forms.ModelForm):
             "address",
             "phone_number",
             "description",
+            "mercadopago_active",
+            "requires_deposit",
+            "default_deposit_type",
+            "default_deposit_value",
+            "default_allow_prepayment",
+            "default_allow_on_site_payment",
             "latitude",
             "longitude",
         ]
@@ -206,6 +278,48 @@ class HairdresserSetupForm(forms.ModelForm):
             "latitude": forms.HiddenInput(),
             "longitude": forms.HiddenInput(),
         }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        mercadopago_active = cleaned_data.get("mercadopago_active")
+        requires_deposit = cleaned_data.get("requires_deposit")
+        default_deposit_type = cleaned_data.get("default_deposit_type")
+        default_deposit_value = cleaned_data.get("default_deposit_value")
+        default_allow_prepayment = cleaned_data.get("default_allow_prepayment")
+        default_allow_on_site_payment = cleaned_data.get(
+            "default_allow_on_site_payment"
+        )
+
+        if not default_allow_prepayment and not default_allow_on_site_payment:
+            self.add_error(
+                "default_allow_prepayment",
+                "Debe permitir al menos un medio de pago (pago adelantado o pago en el local).",
+            )
+
+        if mercadopago_active:
+            token_exists = self.instance and getattr(
+                self.instance, "mercadopago_access_token", None
+            )
+            if not token_exists:
+                self.add_error(
+                    "mercadopago_active",
+                    "Debes vincular tu cuenta de MercadoPago antes de activar los cobros digitales.",
+                )
+
+        if requires_deposit:
+            if default_deposit_value is not None:
+                if default_deposit_value < 0:
+                    self.add_error(
+                        "default_deposit_value",
+                        "El valor de la seña no puede ser negativo.",
+                    )
+                if default_deposit_type == "PERCENTAGE" and default_deposit_value > 100:
+                    self.add_error(
+                        "default_deposit_value",
+                        "El porcentaje de la seña no puede superar el 100%.",
+                    )
+
+        return cleaned_data
 
 
 class WorkingHoursForm(forms.ModelForm):

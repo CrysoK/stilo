@@ -3,6 +3,7 @@ from django.urls import reverse_lazy, reverse
 from django.http import HttpResponseRedirect, JsonResponse, Http404
 from django.utils import timezone
 from django.db.models import Sum, Count, Avg
+from decimal import Decimal
 from django.db.models.functions import TruncMonth
 from django.contrib.auth import login
 from django.contrib.auth.views import LoginView, PasswordChangeView
@@ -22,6 +23,12 @@ from django.views.generic import (
 
 from datetime import datetime, timedelta
 import calendar
+import logging
+import requests
+
+logger = logging.getLogger(__name__)
+mp_logger = logging.getLogger('mp')
+cron_logger = logging.getLogger('cron')
 
 from .forms import (
     HairdresserImageForm,
@@ -44,6 +51,7 @@ from .models import (
     HairdresserImage,
     Review,
     WorkingHours,
+    PaymentTransaction,
 )
 from .utils import get_location_from_ip, geocode_address
 
@@ -238,8 +246,9 @@ class HairdresserDetailView(DetailView):
             context["slot_max_time"] = "20:00:00"
 
         context["services"] = hairdresser.services.all()  # type: ignore
-        # Pasamos el formulario a la plantilla
-        context["form"] = AppointmentForm(hairdresser=hairdresser)
+        # El formulario de reserva solo se incluye para clientes, no para owners.
+        if not (self.request.user.is_authenticated and self.request.user.is_owner):
+            context["form"] = AppointmentForm(hairdresser=hairdresser)
         # Pasamos las reseñas a la plantilla
         context["reviews"] = (
             Review.objects.filter(appointment__service__hairdresser=hairdresser)
@@ -249,6 +258,8 @@ class HairdresserDetailView(DetailView):
         return context
 
     def post(self, request, *args, **kwargs):
+        from django.db import transaction
+
         if not request.user.is_authenticated or request.user.is_owner:
             return JsonResponse(
                 {"success": False, "error": "No tienes permiso para reservar."},
@@ -259,17 +270,158 @@ class HairdresserDetailView(DetailView):
         form = AppointmentForm(request.POST, hairdresser=hairdresser)
 
         if form.is_valid():
-            appointment = form.save(commit=False)
-            appointment.client = request.user
-            appointment.save()
-            messages.success(self.request, "¡Tu turno ha sido reservado con éxito!")
-            return JsonResponse(
-                {"success": True, "redirect_url": reverse("my_appointments")}
-            )
+            # Determinamos si se requiere pago antes de guardar,
+            # para poder establecer expires_at y evitar notificaciones prematuras.
+            service = form.cleaned_data["service"]
+            payment_method = form.cleaned_data["payment_method"]
+
+            # Calculamos si requiere pago digital usando una instancia temporal
+            temp_app = Appointment(service=service, payment_method=payment_method, amount=service.price)
+            requires_payment = False
+            payment_amount = Decimal('0.00')
+
+            if payment_method == 'FULL':
+                requires_payment = True
+                payment_amount = service.price
+            else:  # CASH
+                deposit_amount = temp_app.get_required_deposit_amount()
+                if deposit_amount > 0:
+                    requires_payment = True
+                    payment_amount = deposit_amount
+
+            try:
+                with transaction.atomic():
+                    appointment = form.save(commit=False)
+                    appointment.client = request.user
+                    appointment.status = 'PENDING'
+
+                    if requires_payment:
+                        # El turno expira en 10 minutos si no se completa el pago
+                        appointment.expires_at = timezone.now() + timedelta(minutes=10)
+
+                    appointment.save()
+
+                    if not requires_payment:
+                        # No requiere pago inmediato: el turno queda PENDING
+                        # esperando que el dueño lo confirme manualmente.
+                        # Las notificaciones de "solicitud recibida" se envían
+                        # automáticamente desde Appointment.save().
+                        messages.success(self.request, "Tu solicitud de turno fue enviada. Recibirás una notificación cuando el local la confirme.")
+                        return JsonResponse(
+                            {"success": True, "redirect_url": reverse("my_appointments")}
+                        )
+            except Exception as e:
+
+                logger.error(f"Error guardando el turno: {str(e)}")
+                return JsonResponse(
+                    {"success": False, "error": "Error al crear la reserva. Intente nuevamente."},
+                    status=500
+                )
+
+            # requires_payment=True: crear preferencia en MercadoPago
+            try:
+                import requests as http_requests
+
+                from django.conf import settings as app_settings
+                # En sandbox, usamos el token de prueba del panel (no-marketplace)
+                # porque el token OAuth genera preferencias en modo marketplace,
+                # que falla en sandbox con "algo anduvo mal".
+                if app_settings.MERCADOPAGO_SANDBOX and app_settings.MERCADOPAGO_TEST_ACCESS_TOKEN:
+                    access_token = app_settings.MERCADOPAGO_TEST_ACCESS_TOKEN
+                else:
+                    access_token = hairdresser.mercadopago_access_token
+                if not access_token:
+                    raise ValueError("La peluquería no tiene un token de MercadoPago configurado.")
+
+                pref_url = "https://api.mercadopago.com/checkout/preferences"
+                mp_headers = {
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json"
+                }
+
+                back_url = request.build_absolute_uri(reverse("my_appointments"))
+                notification_url = request.build_absolute_uri(
+                    reverse("mercadopago_webhook", args=[hairdresser.id])
+                )
+
+                title = f"Turno Stilo - {appointment.service.name}"
+                if appointment.payment_method == 'FULL':
+                    title += " (Pago Completo)"
+                else:
+                    title += " (Seña)"
+
+                payload = {
+                    "items": [
+                        {
+                            "id": str(appointment.service.id),
+                            "title": title,
+                            "description": f"Turno para {appointment.service.name} en {hairdresser.name}",
+                            "quantity": 1,
+                            "currency_id": "ARS",
+                            "unit_price": float(payment_amount)
+                        }
+                    ],
+                    "payer": {
+                        "name": appointment.client.first_name,
+                        "surname": appointment.client.last_name,
+                        "email": appointment.client.email,
+                    },
+                    "back_urls": {
+                        "success": back_url,
+                        "failure": back_url,
+                        "pending": back_url
+                    },
+                    "auto_return": "approved",
+                    "binary_mode": True,
+                    "notification_url": notification_url,
+                    "statement_descriptor": "Stilo",
+                    "external_reference": str(appointment.id)
+                }
+
+                # Comisión del marketplace (Application Fee)
+                commission_str = getattr(app_settings, "MERCADOPAGO_COMMISSION_PERCENTAGE", "3.0")
+                try:
+                    commission_percentage = Decimal(str(commission_str))
+                except Exception:
+                    commission_percentage = Decimal("3.0")
+
+                if commission_percentage > 0:
+                    # OJO: Solo cobramos comisión si NO estamos usando el token de prueba global.
+                    # En sandbox con el token de prueba general daría error "marketplace_fee_not_allowed"
+                    # porque no hay un flujo OAuth real (el vendedor y el marketplace son el mismo usuario).
+                    is_test_token = app_settings.MERCADOPAGO_SANDBOX and access_token == app_settings.MERCADOPAGO_TEST_ACCESS_TOKEN
+                    if not is_test_token:
+                        marketplace_fee = (payment_amount * (commission_percentage / Decimal("100.00"))).quantize(Decimal("0.01"))
+                        payload["marketplace_fee"] = float(marketplace_fee)
+
+
+                mp_logger.info(f"Creando preferencia MP para turno {appointment.id} por monto {payment_amount}")
+
+                mp_response = http_requests.post(pref_url, json=payload, headers=mp_headers, timeout=10)
+                mp_response.raise_for_status()
+                pref_data = mp_response.json()
+
+                redirect_url = pref_data.get("sandbox_init_point") if app_settings.MERCADOPAGO_SANDBOX else pref_data.get("init_point")
+                if not redirect_url:
+                    redirect_url = pref_data.get("init_point") or pref_data.get("sandbox_init_point")
+                if not redirect_url:
+                    raise ValueError("No se pudo obtener el punto de inicio de MercadoPago (init_point/sandbox_init_point).")
+
+                return JsonResponse(
+                    {"success": True, "redirect_url": redirect_url}
+                )
+            except Exception as e:
+                # En caso de error, cancelamos la creación del turno
+                appointment.delete()
+
+                mp_logger.error(f"Error creando preferencia de MercadoPago: {str(e)}")
+                return JsonResponse(
+                    {"success": False, "error": f"Error al iniciar el pago con MercadoPago: {str(e)}"},
+                    status=500
+                )
         else:
             # Devolver el primer error encontrado para mostrarlo en el modal
             error_message = "Por favor, corrige los errores."
-            # Los errores de `clean()` van a `__all__`
             if "__all__" in form.errors:
                 error_message = form.errors["__all__"][0]
             else:
@@ -284,6 +436,175 @@ class AppointmentListView(LoginRequiredMixin, ListView):
     template_name = "my_appointments.html"
     context_object_name = "appointments"
 
+    def get(self, request, *args, **kwargs):
+        # Los owners tienen su propia vista de gestión de turnos.
+        if request.user.is_owner:
+            return redirect("owner_appointments")
+
+        # Capturar parámetros de retorno de MercadoPago para fallback/sincronización instantánea
+        payment_id = request.GET.get("payment_id") or request.GET.get("collection_id")
+        status = request.GET.get("status") or request.GET.get("collection_status")
+        external_reference = request.GET.get("external_reference")
+
+        if payment_id and status == "approved" and external_reference:
+            try:
+                # Verificar que el turno pertenezca al usuario logueado
+                appointment = Appointment.objects.get(pk=external_reference, client=request.user)
+
+                # Si el turno no está confirmado o el monto pagado sigue siendo cero, consultamos
+                if appointment.status != 'CONFIRMED' or appointment.amount_paid == Decimal('0.00'):
+                    hairdresser = appointment.service.hairdresser
+                    from django.conf import settings as app_settings
+
+                    if app_settings.MERCADOPAGO_SANDBOX and app_settings.MERCADOPAGO_TEST_ACCESS_TOKEN:
+                        access_token = app_settings.MERCADOPAGO_TEST_ACCESS_TOKEN
+                    else:
+                        access_token = hairdresser.mercadopago_access_token
+
+                    if access_token:
+                        url = f"https://api.mercadopago.com/v1/payments/{payment_id}"
+                        headers = {"Authorization": f"Bearer {access_token}"}
+                        response = requests.get(url, headers=headers, timeout=10)
+                        if response.status_code == 200:
+                            payment_data = response.json()
+                            api_status = payment_data.get('status')
+                            api_ext_ref = str(payment_data.get('external_reference'))
+                            transaction_amount = payment_data.get('transaction_amount')
+
+                            # Registrar la transacción de pago para auditoría (inmutable)
+                            try:
+                                PaymentTransaction.objects.update_or_create(
+                                    payment_id=str(payment_id),
+                                    defaults={
+                                        "appointment": appointment,
+                                        "amount": Decimal(str(transaction_amount)),
+                                        "status": api_status,
+                                    }
+                                )
+                            except Exception as trans_err:
+                                mp_logger.error(
+                                    f"Error al registrar PaymentTransaction en fallback para pago {payment_id}: {str(trans_err)}"
+                                )
+
+                            if api_status == 'approved' and api_ext_ref == str(appointment.id):
+                                from django.db import transaction
+                                try:
+                                    with transaction.atomic():
+                                        # Bloquear la fila del turno para evitar concurrencia
+                                        appointment_locked = Appointment.objects.select_for_update().get(pk=appointment.id)
+                                        
+                                        if appointment_locked.status != 'CONFIRMED':
+                                            # Verificar si ya existe otro turno CONFIRMADO que se superpone con este
+                                            has_overlap = Appointment.objects.filter(
+                                                service__hairdresser=appointment_locked.service.hairdresser,
+                                                status="CONFIRMED",
+                                                start_time__lt=appointment_locked.end_time,
+                                                end_time__gt=appointment_locked.start_time,
+                                            ).exclude(pk=appointment_locked.id).exists()
+
+                                            if has_overlap:
+                                                # El turno ya fue ocupado: cancelar y reembolsar
+                                                appointment_locked.status = 'CANCELLED'
+                                                appointment_locked.amount_paid = Decimal(str(transaction_amount))
+                                                appointment_locked.mercadopago_payment_id = str(payment_id)
+                                                appointment_locked.expires_at = None
+                                                appointment_locked.save()
+
+                                                # Realizar reembolso en MercadoPago
+                                                try:
+                                                    refund_url = f"https://api.mercadopago.com/v1/payments/{payment_id}/refunds"
+                                                    refund_resp = requests.post(refund_url, headers=headers, json={}, timeout=10)
+                                                    refund_resp.raise_for_status()
+                                                    messages.warning(request, "El turno seleccionado ya fue confirmado por otro usuario. Se ha realizado un reembolso automático a tu cuenta.")
+                                                except Exception as refund_err:
+
+                                                    mp_logger.error(f"Error reembolsando pago {payment_id} para turno {appointment_locked.id}: {str(refund_err)}")
+                                                    # Registrar reembolso pendiente
+                                                    from core.models import PendingRefund
+                                                    PendingRefund.objects.get_or_create(
+                                                        appointment=appointment_locked,
+                                                        defaults={
+                                                            'payment_id': payment_id,
+                                                            'amount': Decimal(str(transaction_amount)),
+                                                            'last_error': str(refund_err)
+                                                        }
+                                                    )
+                                                    messages.error(request, "El turno ya no está disponible. No se pudo procesar tu reembolso automático en este momento, pero el sistema lo reintentará automáticamente. Por favor contacta al local.")
+
+                                                # Notificar al cliente
+                                                from core.utils import notify_user
+                                                notify_user(
+                                                    user=appointment_locked.client,
+                                                    event_type="APPOINTMENT_CANCELLED_CLIENT",
+                                                    context={"appointment": appointment_locked, "overbooked_refund": True},
+                                                    subject="Reembolso de Turno - Stilo",
+                                                    push_title="Turno cancelado y reembolsado",
+                                                    push_message=f"Tu turno en {appointment_locked.service.hairdresser.name} no estaba disponible y fue reembolsado automáticamente."
+                                                )
+                                            else:
+                                                # Verificar que el monto pagado sea suficiente
+                                                expected_amount = appointment_locked.get_expected_payment_amount()
+                                                paid_amount = Decimal(str(transaction_amount))
+
+                                                if paid_amount < expected_amount:
+                                                    # Pago insuficiente: cancelar y reembolsar automáticamente
+                                                    appointment_locked.status = 'CANCELLED'
+                                                    appointment_locked.amount_paid = paid_amount
+                                                    appointment_locked.mercadopago_payment_id = str(payment_id)
+                                                    appointment_locked.expires_at = None
+                                                    appointment_locked.save()
+
+                                                    # Realizar reembolso en MercadoPago
+                                                    try:
+                                                        refund_url = f"https://api.mercadopago.com/v1/payments/{payment_id}/refunds"
+                                                        refund_resp = requests.post(refund_url, headers=headers, json={}, timeout=10)
+                                                        refund_resp.raise_for_status()
+                                                        messages.error(request, "El pago realizado es insuficiente. Se ha cancelado el turno y se ha realizado un reembolso automático a tu cuenta.")
+                                                    except Exception as refund_err:
+
+                                                        mp_logger.error(f"Error reembolsando pago insuficiente {payment_id} para turno {appointment_locked.id}: {str(refund_err)}")
+                                                        # Registrar reembolso pendiente
+                                                        from core.models import PendingRefund
+                                                        PendingRefund.objects.get_or_create(
+                                                            appointment=appointment_locked,
+                                                            defaults={
+                                                                'payment_id': payment_id,
+                                                                'amount': paid_amount,
+                                                                'last_error': str(refund_err)
+                                                            }
+                                                        )
+                                                        messages.error(request, "El pago realizado es insuficiente. No se pudo procesar tu reembolso automático en este momento, pero el sistema lo reintentará automáticamente. Por favor contacta al local.")
+
+                                                    # Notificar al cliente
+                                                    from core.utils import notify_user
+                                                    notify_user(
+                                                        user=appointment_locked.client,
+                                                        event_type="APPOINTMENT_CANCELLED_CLIENT",
+                                                        context={"appointment": appointment_locked, "underpaid_refund": True},
+                                                        subject="Reembolso de Turno - Stilo",
+                                                        push_title="Turno cancelado por pago insuficiente",
+                                                        push_message=f"Tu turno en {appointment_locked.service.hairdresser.name} fue cancelado y reembolsado porque el pago fue menor al requerido."
+                                                    )
+                                                else:
+                                                    # Confirmar normalmente
+                                                    appointment_locked.status = 'CONFIRMED'
+                                                    appointment_locked.amount_paid = paid_amount
+                                                    appointment_locked.mercadopago_payment_id = str(payment_id)
+                                                    appointment_locked.expires_at = None
+                                                    appointment_locked.save()
+                                                    messages.success(request, "¡Tu pago ha sido acreditado y tu turno está confirmado!")
+                                except Exception as e:
+
+                                    mp_logger.error(f"Error procesando confirmación atómica en vista: {str(e)}")
+
+            except Appointment.DoesNotExist:
+                pass
+            except Exception as e:
+
+                mp_logger.error(f"Error en fallback de MercadoPago en AppointmentListView: {str(e)}")
+
+        return super().get(request, *args, **kwargs)
+
     def get_queryset(self):
         # CRÍTICO: Solo mostrar turnos del cliente logueado.
         return (
@@ -295,6 +616,59 @@ class AppointmentListView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["review_form"] = ReviewForm()
+        return context
+
+
+class OwnerAppointmentListView(OwnerRequiredMixin, ListView):
+    """
+    Vista de gestión de turnos exclusiva para owners.
+    Muestra todos los turnos de su peluquería con filtros por estado y fecha.
+    """
+    model = Appointment
+    template_name = "owner_appointments.html"
+    context_object_name = "appointments"
+    paginate_by = 25
+
+    def get_queryset(self):
+        hairdresser = self.request.user.hairdresser_profile  # type: ignore
+        qs = (
+            Appointment.objects.filter(service__hairdresser=hairdresser)
+            .select_related("client", "service", "review")
+            .order_by("-start_time")
+        )
+
+        # Filtro por estado
+        status_filter = self.request.GET.get("status", "")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        # Filtro por fecha (mes, formato YYYY-MM)
+        month_str = self.request.GET.get("month", "")
+        if month_str:
+            try:
+                from datetime import datetime as dt
+                selected = dt.strptime(month_str, "%Y-%m").date()
+                import calendar
+                _, num_days = calendar.monthrange(selected.year, selected.month)
+                qs = qs.filter(
+                    start_time__date__gte=selected.replace(day=1),
+                    start_time__date__lte=selected.replace(day=num_days),
+                )
+            except ValueError:
+                pass
+
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["status_filter"] = self.request.GET.get("status", "")
+        context["month_filter"] = self.request.GET.get("month", "")
+        context["status_choices"] = Appointment.STATUS_CHOICES
+        # Contadores por estado para el resumen rápido
+        hairdresser = self.request.user.hairdresser_profile  # type: ignore
+        context["pending_count"] = Appointment.objects.filter(
+            service__hairdresser=hairdresser, status="PENDING", expires_at__isnull=True
+        ).count()
         return context
 
 
@@ -557,7 +931,7 @@ def busiest_days_chart_data(request):
     day_counts = (
         Appointment.objects.filter(
             service__hairdresser=hairdresser,
-            status__in=["COMPLETED", "CONFIRMED", "PENDING"],
+            status__in=["COMPLETED", "CONFIRMED"],
             start_time__range=[start_date, end_date],
         )
         .values("start_time__week_day")
@@ -595,11 +969,17 @@ def busiest_days_chart_data(request):
 
 
 def appointment_events_data(request, hairdresser_id):
-    # Devuelve los turnos de una peluquería como eventos de FullCalendar
+    # Devuelve los turnos de una peluquería como eventos de FullCalendar.
+    # Se bloquean:
+    #   - CONFIRMED: turnos confirmados.
+    #   - PENDING sin expires_at: solicitudes esperando confirmación del dueño (ocupan el slot).
+    # No se bloquean los PENDING con expires_at (checkout de pago en curso, expiran solos).
+    from django.db.models import Q
     appointments = Appointment.objects.filter(
         service__hairdresser_id=hairdresser_id,
-        # Considerar turnos pendientes o confirmados como no disponibles
-        status__in=["PENDING", "CONFIRMED"],
+    ).filter(
+        Q(status="CONFIRMED") |
+        Q(status="PENDING", expires_at__isnull=True)
     )
     working_hours = WorkingHours.objects.filter(hairdresser_id=hairdresser_id)
     events = []
@@ -862,6 +1242,12 @@ def get_service_detail(request, pk):
             "price": str(service.price),
             "duration_minutes": service.duration_minutes,
             "description": service.description,
+            "override_deposit": service.override_deposit,
+            "deposit_type": service.deposit_type,
+            "deposit_value": str(service.deposit_value),
+            "override_payment_modes": service.override_payment_modes,
+            "allow_prepayment": service.allow_prepayment,
+            "allow_on_site_payment": service.allow_on_site_payment,
         }
     )
 
@@ -912,6 +1298,17 @@ class WorkstationView(OwnerRequiredMixin, TemplateView):
         context["upcoming_appointments"] = upcoming_appointments
         context["completed_appointments"] = completed_appointments
         context["hairdresser"] = hairdresser
+
+        # Cantidad de solicitudes pendientes de confirmación manual para otros días
+        context["pending_requests_count"] = (
+            Appointment.objects.filter(
+                service__hairdresser=hairdresser,
+                status="PENDING",
+                expires_at__isnull=True,
+            )
+            .exclude(start_time__date=today)  # las de hoy ya aparecen arriba
+            .count()
+        )
         return context
 
 
@@ -931,19 +1328,126 @@ def update_appointment_status(request, pk):
         )
 
         new_status = request.POST.get("status")
-        valid_statuses = ["COMPLETED", "NO_SHOW"]
-
-        if new_status in valid_statuses:
-            appointment.status = new_status
-            appointment.save()
-            return JsonResponse({"status": "success", "message": "Turno actualizado."})
-        else:
+        
+        # Validar que se envió un status
+        if not new_status:
             return JsonResponse(
-                {"status": "error", "message": "Estado inválido."}, status=400
+                {"status": "error", "message": "Status es requerido."}, status=400
             )
+        
+        # Estados finales que no pueden cambiar
+        if appointment.status in ["COMPLETED", "NO_SHOW"]:
+            status_labels = dict(Appointment.STATUS_CHOICES)
+            status_label = status_labels.get(appointment.status, appointment.status)
+            return JsonResponse(
+                {"status": "error", "message": f"No se puede cambiar un turno en estado {status_label}."}, status=400
+            )
+        
+        # Definir transiciones válidas según el estado actual
+        valid_statuses = []
+        
+        if appointment.status == "PENDING":
+            # Desde PENDING: confirmar, cancelar o marcar como no presentado
+            valid_statuses = ["CONFIRMED", "CANCELLED", "NO_SHOW"]
+        elif appointment.status == "CONFIRMED":
+            # Desde CONFIRMED: marcar como completado, cancelar o no se presentó
+            valid_statuses = ["COMPLETED", "CANCELLED", "NO_SHOW"]
+        elif appointment.status == "CANCELLED":
+            # Ya está cancelado
+            return JsonResponse(
+                {"status": "error", "message": "Este turno ya fue cancelado."}, status=400
+            )
+        else:
+            # Estado desconocido
+            return JsonResponse(
+                {"status": "error", "message": f"Estado del turno desconocido: {appointment.status}"}, status=400
+            )
+
+        if new_status not in valid_statuses:
+            return JsonResponse(
+                {"status": "error", "message": f"No se puede cambiar a estado '{new_status}' desde '{appointment.status}'."}, status=400
+            )
+        
+        # Si se cancela un turno pagado por MercadoPago, procesar refund PRIMERO
+        refund_status = None
+        if new_status == "CANCELLED" and appointment.amount_paid > 0:
+            from core.utils import process_mercadopago_refund, get_mercadopago_payment_id_from_api
+            from decimal import Decimal
+
+            
+            # Si no tiene payment_id guardado, intentar obtenerlo de la API (fallback)
+            payment_id = appointment.mercadopago_payment_id
+            if not payment_id:
+                mp_logger.info(f"[CANCEL] No hay payment_id guardado, intentando obtenerlo de MercadoPago...")
+                payment_id = get_mercadopago_payment_id_from_api(
+                    hairdresser=appointment.service.hairdresser,
+                    appointment_id=appointment.id
+                )
+                if payment_id:
+                    # Guardar el payment_id para futuras referencias
+                    appointment.mercadopago_payment_id = payment_id
+                    appointment.save(update_fields=['mercadopago_payment_id'])
+                    mp_logger.info(f"[CANCEL] payment_id obtenido y guardado: {payment_id}")
+            
+            if payment_id:
+                mp_logger.info(f"[CANCEL] Iniciando refund para appointment {pk}: payment_id={payment_id}, amount={appointment.amount_paid}")
+                
+                refund_result = process_mercadopago_refund(
+                    hairdresser=appointment.service.hairdresser,
+                    payment_id=payment_id,
+                    amount=Decimal(str(appointment.amount_paid))
+                )
+                
+                mp_logger.info(f"[CANCEL] Refund result: {refund_result}")
+                
+                if refund_result['success']:
+                    refund_status = 'success'
+                    mp_logger.info(f"[CANCEL] Refund successful: {refund_result['refund_id']}")
+                    # Refund exitoso, continuar con la cancelación
+                else:
+                    # REFUND FALLÓ - Cancelamos el turno igualmente y encolamos el reembolso
+                    refund_status = 'pending'
+                    error_detail = refund_result.get('error', 'Error desconocido')
+                    mp_logger.error(f"[CANCEL] Refund failed - Enqueuing pending refund: {error_detail}")
+                    from core.models import PendingRefund
+                    PendingRefund.objects.get_or_create(
+                        appointment=appointment,
+                        defaults={
+                            'payment_id': payment_id,
+                            'amount': Decimal(str(appointment.amount_paid)),
+                            'last_error': error_detail
+                        }
+                    )
+            else:
+                # No se encontró payment_id - No cancelar si hay dinero
+                mp_logger.warning(f"[CANCEL] No se pudo obtener payment_id para refund - NO cancelling appointment")
+                return JsonResponse({
+                    "status": "error", 
+                    "message": f"No se pudo localizar el pago en MercadoPago para procesar el reembolso de ${appointment.amount_paid}. El turno NO fue cancelado. Por favor contacta a soporte."
+                }, status=402)
+        elif new_status == "CANCELLED":
+
+            mp_logger.info(f"[CANCEL] Cancelando turno sin refund: amount_paid={appointment.amount_paid}, payment_id={appointment.mercadopago_payment_id}")
+        
+        # SOLO guardar cambio de estado si no hay error (refunds exitosos o sin dinero)
+        appointment.status = new_status
+        appointment.save()
+        
+        # Respuesta de éxito
+        response_msg = "Turno actualizado."
+        if new_status == "CANCELLED":
+            if refund_status == 'success':
+                response_msg = f"✓ Turno cancelado y reembolso de ${appointment.amount_paid} procesado exitosamente."
+            elif refund_status == 'pending':
+                response_msg = f"✓ Turno cancelado. El reembolso de ${appointment.amount_paid} falló y se reintentará automáticamente."
+            else:
+                response_msg = "✓ Turno cancelado."
+        
+        return JsonResponse({"status": "success", "message": response_msg})
 
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
 
 
 def send_reminders_view(request):
@@ -964,10 +1468,11 @@ def send_reminders_view(request):
     local_now = timezone.localtime(timezone.now())
     tomorrow_date = local_now.date() + datetime.timedelta(days=1)
 
-    # Filtrar turnos del día siguiente que estén en estado PENDING o CONFIRMED
+    # Filtrar solo los turnos CONFIRMED para el día siguiente.
+    # Los turnos PENDING que nunca fueron pagados no deben recibir recordatorios.
     appointments = Appointment.objects.filter(
         start_time__date=tomorrow_date,
-        status__in=["PENDING", "CONFIRMED"]
+        status="CONFIRMED"
     ).select_related("client", "service__hairdresser")
 
     sent_count = 0
@@ -1063,5 +1568,386 @@ def service_worker(request):
             return HttpResponse(f.read(), content_type='application/javascript')
     except FileNotFoundError:
         return HttpResponse('Service worker file not found', status=404)
+
+
+@login_required
+def mercadopago_auth_redirect(request):
+    from django.conf import settings
+    if not request.user.is_owner:
+        messages.error(request, "No tienes permisos para realizar esta acción.")
+        return redirect("home")
+    
+    hairdresser = getattr(request.user, "hairdresser_profile", None)
+    if not hairdresser:
+        messages.error(request, "Perfil de peluquería no encontrado.")
+        return redirect("home")
+
+    client_id = getattr(settings, "MERCADOPAGO_CLIENT_ID", None)
+    if not client_id:
+        messages.error(request, "MercadoPago Client ID no configurado en el servidor.")
+        return redirect("my_hairdresser_info")
+
+    redirect_uri = request.build_absolute_uri(reverse("mercadopago_callback"))
+    state = str(hairdresser.id)
+    
+    auth_url = f"https://auth.mercadopago.com.ar/authorization?response_type=code&client_id={client_id}&redirect_uri={redirect_uri}&state={state}"
+    return redirect(auth_url)
+
+
+@login_required
+def mercadopago_unlink(request):
+    if not request.user.is_owner:
+        messages.error(request, "No tienes permisos para realizar esta acción.")
+        return redirect("home")
+    
+    hairdresser = getattr(request.user, "hairdresser_profile", None)
+    if not hairdresser:
+        messages.error(request, "Perfil de peluquería no encontrado.")
+        return redirect("home")
+
+    hairdresser.mercadopago_access_token = ""
+    hairdresser.mercadopago_refresh_token = ""
+    hairdresser.mercadopago_user_id = ""
+    hairdresser.mercadopago_token_expires_at = None
+    hairdresser.mercadopago_active = False
+    hairdresser.save()
+    
+    messages.success(request, "Cuenta de MercadoPago desvinculada exitosamente.")
+    return redirect("my_hairdresser_info")
+
+
+@login_required
+def mercadopago_callback(request):
+    from django.conf import settings
+    import requests
+    
+    if not request.user.is_owner:
+        messages.error(request, "No tienes permisos para realizar esta acción.")
+        return redirect("home")
+    
+    code = request.GET.get("code")
+    state = request.GET.get("state")
+    
+    if not code or not state:
+        messages.error(request, "Faltan parámetros en la respuesta de MercadoPago.")
+        return redirect("my_hairdresser_info")
+        
+    try:
+        hairdresser = Hairdresser.objects.get(pk=state, owner=request.user)
+    except Hairdresser.DoesNotExist:
+        messages.error(request, "Peluquería no encontrada o no te pertenece.")
+        return redirect("home")
+
+    client_id = getattr(settings, "MERCADOPAGO_CLIENT_ID", None)
+    client_secret = getattr(settings, "MERCADOPAGO_CLIENT_SECRET", None)
+    
+    if not client_id or not client_secret:
+        messages.error(request, "Credenciales de MercadoPago no configuradas en el servidor.")
+        return redirect("my_hairdresser_info")
+        
+    token_url = "https://api.mercadopago.com/oauth/token"
+    payload = {
+        "grant_type": "authorization_code",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": code,
+        "redirect_uri": request.build_absolute_uri(reverse("mercadopago_callback"))
+    }
+    if settings.DEBUG:
+        payload["test_token"] = "true"
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded"
+    }
+    
+    try:
+        response = requests.post(token_url, data=payload, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        hairdresser.mercadopago_access_token = data.get("access_token", "")
+        hairdresser.mercadopago_refresh_token = data.get("refresh_token", "")
+        hairdresser.mercadopago_user_id = str(data.get("user_id", ""))
+        
+        expires_in = data.get("expires_in")
+        from django.utils import timezone
+        from datetime import timedelta
+        if expires_in:
+            hairdresser.mercadopago_token_expires_at = timezone.now() + timedelta(seconds=int(expires_in))
+        else:
+            hairdresser.mercadopago_token_expires_at = timezone.now() + timedelta(days=180)
+            
+        hairdresser.mercadopago_active = True
+        hairdresser.save()
+        
+        messages.success(request, "¡Cuenta de MercadoPago vinculada exitosamente!")
+    except requests.exceptions.HTTPError as http_err:
+
+        try:
+            error_data = response.json()
+            error_msg = error_data.get("message") or error_data.get("error_description") or str(http_err)
+        except Exception:
+            error_msg = str(http_err)
+        mp_logger.error(f"Error swapping oauth code for token: {error_msg}")
+        messages.error(request, f"Error al vincular con MercadoPago: {error_msg}")
+    except Exception as e:
+
+        mp_logger.error(f"Error swapping oauth code for token: {str(e)}")
+        messages.error(request, f"Error al vincular con MercadoPago: {str(e)}")
+        
+    return redirect("my_hairdresser_info")
+
+
+def cancel_expired_appointments_view(request):
+    """
+    Endpoint para cancelar los turnos PENDING cuyo tiempo de espera de pago ha expirado.
+    Protegido por token/clave secreta.
+    """
+    token = request.GET.get("token") or request.headers.get("X-Reminder-Token")
+    from django.conf import settings
+    if not token or token != settings.REMINDER_TOKEN:
+        return JsonResponse({"error": "No autorizado"}, status=403)
+
+    from django.utils import timezone
+    from core.models import Appointment
+
+    now = timezone.now()
+    cron_logger.info("[CRON] Ejecutando cancel-expired-appointments")
+    expired = Appointment.objects.filter(
+        status="PENDING",
+        expires_at__isnull=False,
+        expires_at__lt=now,
+    )
+
+    count = expired.count()
+    cancelled = 0
+    for app in expired:
+        try:
+            app.status = "CANCELLED"
+            app.save()
+            cancelled += 1
+        except Exception as e:
+            cron_logger.error(f"Error al cancelar turno #{app.pk}: {e}")
+
+    cron_logger.info(f"[CRON] cancel-expired finalizado: procesados={count}, cancelados={cancelled}")
+    return JsonResponse({
+        "status": "success",
+        "processed": count,
+        "cancelled": cancelled
+    })
+
+
+def retry_refunds_cron_view(request):
+    """
+    Endpoint cron para procesar la cola de reembolsos pendientes.
+    Protegido por token/clave secreta.
+    """
+    token = request.GET.get("token") or request.headers.get("X-Reminder-Token")
+    from django.conf import settings
+    if not token or token != settings.REMINDER_TOKEN:
+        return JsonResponse({"error": "No autorizado"}, status=403)
+
+    from core.models import PendingRefund
+    from core.utils import process_mercadopago_refund
+
+    # Reintentar aquellos con menos de 5 intentos
+    cron_logger.info("[CRON] Ejecutando retry-refunds")
+    pending_refunds = PendingRefund.objects.filter(attempts__lt=5)
+    processed = pending_refunds.count()
+    succeeded = 0
+    failed = 0
+
+    for pr in pending_refunds:
+        try:
+            pr.attempts += 1
+            # Realizar el reembolso llamando al helper común
+            res = process_mercadopago_refund(
+                hairdresser=pr.appointment.service.hairdresser,
+                payment_id=pr.payment_id,
+                amount=pr.amount
+            )
+            if res['success']:
+                pr.delete()  # Si se reembolsó correctamente, se elimina de la cola
+                succeeded += 1
+            else:
+                pr.last_error = res.get('error', 'Error desconocido')
+                pr.save()
+                failed += 1
+        except Exception as e:
+            pr.last_error = str(e)
+            pr.save()
+            failed += 1
+
+    cron_logger.info(f"[CRON] retry-refunds finalizado: procesados={processed}, exitosos={succeeded}, fallidos={failed}")
+    return JsonResponse({
+        "status": "success",
+        "processed": processed,
+        "succeeded": succeeded,
+        "failed": failed
+    })
+
+
+def developer_required(view_func):
+    """
+    Decorador que permite el acceso solo si DEBUG=True o si el usuario es staff/superuser.
+    """
+    from django.conf import settings
+    from django.http import HttpResponseForbidden
+
+    def _wrapped_view(request, *args, **kwargs):
+        if settings.DEBUG or (request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)):
+            return view_func(request, *args, **kwargs)
+        return HttpResponseForbidden("Acceso restringido a desarrolladores.")
+    return _wrapped_view
+
+
+@developer_required
+def email_preview_list(request):
+    templates = [
+        ("WELCOME", "emails/welcome.html", "Bienvenida a nuevos usuarios"),
+        ("PASSWORD_CHANGED", "emails/password_changed.html", "Cambio de contraseña"),
+        ("APPOINTMENT_REQUEST_CLIENT", "emails/appointment_request_client.html", "Solicitud recibida (Cliente)"),
+        ("APPOINTMENT_REQUEST_OWNER", "emails/appointment_request_owner.html", "Nueva solicitud recibida (Dueño)"),
+        ("APPOINTMENT_SUCCESS_CLIENT", "emails/appointment_success_client.html", "Confirmación de turno (Cliente)"),
+        ("APPOINTMENT_SUCCESS_OWNER", "emails/appointment_success_owner.html", "Nueva reserva confirmada (Dueño)"),
+        ("APPOINTMENT_CANCELLED_CLIENT", "emails/appointment_cancelled_client.html", "Turno cancelado (Cliente)"),
+        ("APPOINTMENT_CANCELLED_OWNER", "emails/appointment_cancelled_owner.html", "Reserva cancelada (Dueño)"),
+        ("APPOINTMENT_REMINDER", "emails/appointment_reminder.html", "Recordatorio de turno"),
+    ]
+    return render(request, "debug_email_list.html", {"templates": templates})
+
+
+from django.views.decorators.clickjacking import xframe_options_exempt
+
+@xframe_options_exempt
+@developer_required
+def email_preview_render(request, template_name):
+    template_map = {
+        'WELCOME': 'emails/welcome.html',
+        'PASSWORD_CHANGED': 'emails/password_changed.html',
+        'APPOINTMENT_REQUEST_CLIENT': 'emails/appointment_request_client.html',
+        'APPOINTMENT_REQUEST_OWNER': 'emails/appointment_request_owner.html',
+        'APPOINTMENT_SUCCESS_CLIENT': 'emails/appointment_success_client.html',
+        'APPOINTMENT_SUCCESS_OWNER': 'emails/appointment_success_owner.html',
+        'APPOINTMENT_CANCELLED_CLIENT': 'emails/appointment_cancelled_client.html',
+        'APPOINTMENT_CANCELLED_OWNER': 'emails/appointment_cancelled_owner.html',
+        'APPOINTMENT_REMINDER': 'emails/appointment_reminder.html',
+    }
+
+    path = template_map.get(template_name)
+    if not path:
+        raise Http404("Plantilla no encontrada")
+
+    # Crear objetos mock
+    dummy_owner = User(first_name="Diego", last_name="Maradona", email="owner@stilo.com", username="diego")
+    dummy_client = User(first_name="Lionel", last_name="Messi", email="client@stilo.com", username="leo")
+    
+    # Hairdresser
+    payment_state = request.GET.get("payment_state", "full")
+    requires_deposit = (payment_state == "deposit")
+    mercadopago_active = (payment_state in ["full", "deposit"])
+
+    dummy_hairdresser = Hairdresser(
+        owner=dummy_owner,
+        name="Estilo & Clase",
+        address="Av. Siempre Viva 742, Springfield",
+        phone_number="+54 387 1234567",
+        requires_deposit=requires_deposit,
+        mercadopago_active=mercadopago_active,
+        default_deposit_type="PERCENTAGE",
+        default_deposit_value=Decimal("20.00")
+    )
+    
+    # Service
+    dummy_service = Service(
+        hairdresser=dummy_hairdresser,
+        name="Corte Masculino + Barba",
+        price=Decimal("1500.00"),
+        duration_minutes=45
+    )
+    
+    # Appointment parameters based on query string
+    if payment_state == "full":
+        payment_method = "FULL"
+        amount_paid = Decimal("1500.00")
+    elif payment_state == "deposit":
+        payment_method = "CASH"
+        amount_paid = Decimal("300.00")
+    else: # cash
+        payment_method = "CASH"
+        amount_paid = Decimal("0.00")
+
+    dummy_app = Appointment(
+        client=dummy_client,
+        service=dummy_service,
+        start_time=timezone.now() + timedelta(days=1),
+        end_time=timezone.now() + timedelta(days=1, minutes=45),
+        amount=Decimal("1500.00"),
+        payment_method=payment_method,
+        amount_paid=amount_paid,
+        status="CONFIRMED" if template_name not in ["APPOINTMENT_CANCELLED_CLIENT", "APPOINTMENT_CANCELLED_OWNER"] else "CANCELLED"
+    )
+
+    context = {
+        "user": dummy_client,
+        "login_url": request.build_absolute_uri("/login/"),
+        "appointment": dummy_app,
+        "overbooked_refund": request.GET.get("overbooked_refund") == "true",
+    }
+    return render(request, path, context)
+
+
+def refresh_mercadopago_tokens_cron_view(request):
+    """
+    Endpoint de cron para renovar de forma automática los tokens de MercadoPago
+    próximos a expirar (menos de 30 días restantes) o vacíos (para compatibilidad).
+    """
+    token = request.GET.get("token") or request.headers.get("X-Reminder-Token")
+    from django.conf import settings
+    if not token or token != settings.REMINDER_TOKEN:
+        return JsonResponse({"error": "No autorizado"}, status=403)
+
+    from core.models import Hairdresser
+    from django.utils import timezone
+    from datetime import timedelta
+    from django.db.models import Q
+
+    cron_logger.info("[CRON] Ejecutando refresh-mercadopago-tokens")
+
+    # Buscar peluquerías que expiren en menos de 30 días o que tengan el campo nulo pero tengan refresh_token
+    limit_date = timezone.now() + timedelta(days=30)
+    to_refresh = Hairdresser.objects.filter(
+        mercadopago_active=True
+    ).exclude(
+        mercadopago_refresh_token=""
+    ).filter(
+        Q(mercadopago_token_expires_at__isnull=True) |
+        Q(mercadopago_token_expires_at__lt=limit_date)
+    )
+
+    processed = to_refresh.count()
+    succeeded = 0
+    failed = 0
+    errors = []
+
+    from core.utils import refresh_mercadopago_token
+
+    for hd in to_refresh:
+        try:
+            refresh_mercadopago_token(hd)
+            succeeded += 1
+        except Exception as e:
+            failed += 1
+            err_msg = f"Error al renovar token para Peluquería ID {hd.pk}: {str(e)}"
+            cron_logger.error(err_msg)
+            errors.append(err_msg)
+
+    return JsonResponse({
+        "status": "success",
+        "processed": processed,
+        "succeeded": succeeded,
+        "failed": failed,
+        "errors": errors
+    })
 
 

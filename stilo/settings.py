@@ -62,11 +62,11 @@ TEMPLATES = [
         "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
-                'core.context_processors.vapid_keys',
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+                "core.context_processors.vapid_keys",
             ],
         },
     },
@@ -136,27 +136,24 @@ CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 CRISPY_TEMPLATE_PACK = "bootstrap5"
 
 from django.contrib.messages import constants as messages
+
 MESSAGE_TAGS = {
-    messages.DEBUG: 'secondary',
-    messages.INFO: 'info',
-    messages.SUCCESS: 'success',
-    messages.WARNING: 'warning',
-    messages.ERROR: 'danger',
+    messages.DEBUG: "secondary",
+    messages.INFO: "info",
+    messages.SUCCESS: "success",
+    messages.WARNING: "warning",
+    messages.ERROR: "danger",
 }
 
 
-# Configuración del Servidor de Correo (SMTP)
-EMAIL_HOST = config("EMAIL_HOST", default="")
-EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
-EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
-EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
-EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+# Configuración del Correo (Brevo API)
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="Stilo <no-reply@stilo.com>")
+BREVO_API_KEY = config("BREVO_API_KEY", default="")
 
-if DEBUG and not EMAIL_HOST:
+if DEBUG and not BREVO_API_KEY:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 else:
-    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_BACKEND = "core.email_backend.BrevoEmailBackend"
 
 # Token de recordatorios
 REMINDER_TOKEN = config("REMINDER_TOKEN", default="desarrollo_secreto")
@@ -164,6 +161,109 @@ REMINDER_TOKEN = config("REMINDER_TOKEN", default="desarrollo_secreto")
 # Web Push VAPID keys
 VAPID_PUBLIC_KEY = config("VAPID_PUBLIC_KEY", default="")
 VAPID_PRIVATE_KEY = config("VAPID_PRIVATE_KEY", default="")
+# Integración MercadoPago OAuth
+MERCADOPAGO_CLIENT_ID = config("MERCADOPAGO_CLIENT_ID", default="")
+MERCADOPAGO_CLIENT_SECRET = config("MERCADOPAGO_CLIENT_SECRET", default="")
+# Clave para cifrado de campos sensibles en base de datos
+FIELD_ENCRYPTION_KEY = config("FIELD_ENCRYPTION_KEY", default="")
+# Token de prueba del panel de desarrollador (sandbox, sin modo marketplace)
+MERCADOPAGO_TEST_ACCESS_TOKEN = config("MERCADOPAGO_TEST_ACCESS_TOKEN", default="")
+# Secreto del webhook para validación de firma de MercadoPago
+MERCADOPAGO_WEBHOOK_SECRET = config("MERCADOPAGO_WEBHOOK_SECRET", default="")
+# Comisión del marketplace por transacciones en MercadoPago (porcentaje)
+MERCADOPAGO_COMMISSION_PERCENTAGE = config(
+    "MERCADOPAGO_COMMISSION_PERCENTAGE", default="2.0"
+)
+# Modo sandbox de MercadoPago (independiente del DEBUG del sitio)
+# True  → usa sandbox_init_point y el token de prueba (MERCADOPAGO_TEST_ACCESS_TOKEN)
+# False → usa init_point y el token OAuth real del peluquero
+MERCADOPAGO_SANDBOX = config("MERCADOPAGO_SANDBOX", default=DEBUG, cast=bool)
 
+# Orígenes confiables para CSRF (requerido al acceder mediante túneles HTTPS en desarrollo local)
+CSRF_TRUSTED_ORIGINS = [
+    f"https://{host}"
+    for host in ALLOWED_HOSTS
+    if host and not host.startswith((".", "localhost", "127.0.0.1", "[::1]"))
+]
+CSRF_TRUSTED_ORIGINS += ["http://localhost", "http://127.0.0.1"]
+
+# Confiar en el encabezado de proxy SSL provisto por el túnel (para generar enlaces HTTPS)
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Validación obligatoria de secretos en producción
+if not DEBUG:
+    assert MERCADOPAGO_WEBHOOK_SECRET, "¡Se requiere MERCADOPAGO_WEBHOOK_SECRET en producción!"
+
+
+# Configuración de Logging temático: archivos separados por funcionalidad
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'mp_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'logs' / 'mercadopago.log',
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+            'maxBytes': 5 * 1024 * 1024,  # 5 MB
+            'backupCount': 3,
+        },
+        'cron_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'logs' / 'cron.log',
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+            'maxBytes': 5 * 1024 * 1024,
+            'backupCount': 3,
+        },
+        'core_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'logs' / 'core.log',
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+            'maxBytes': 5 * 1024 * 1024,
+            'backupCount': 3,
+        },
+    },
+    'loggers': {
+        'mp': {
+            'handlers': ['console', 'mp_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'cron': {
+            'handlers': ['console', 'cron_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'core': {
+            'handlers': ['console', 'core_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['core_file'],
+            'level': 'ERROR',
+            'propagate': True,
+        },
+    },
+}
 
 

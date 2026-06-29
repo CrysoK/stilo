@@ -6,11 +6,28 @@
 {% block tab_content %}
 <form method="post">
   {% csrf_token %}
-  <div class="card border-0">
-    <div class="card-body p-0">
-      {{ form|crispy }}
+  
+  <!-- Información General -->
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-body-tertiary border-0 py-3">
+      <h5 class="mb-0 text-primary"><i class="bi bi-info-circle-fill"></i> Información General</h5>
+    </div>
+    <div class="card-body">
+      {{ form.name|as_crispy_field }}
+      {{ form.address|as_crispy_field }}
+      {{ form.phone_number|as_crispy_field }}
+      {{ form.description|as_crispy_field }}
+    </div>
+  </div>
 
-      <!-- Map -->
+  <!-- Ubicación -->
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-body-tertiary border-0 py-3">
+      <h5 class="mb-0 text-primary"><i class="bi bi-map-fill"></i> Ubicación</h5>
+    </div>
+    <div class="card-body">
+      {{ form.latitude }}
+      {{ form.longitude }}
       <div class="mb-3">
         <label class="form-label">Ubicación en el mapa</label>
         <div id="map" style="height: 350px; width: 100%;" class="mb-2 rounded"></div>
@@ -31,6 +48,88 @@
       </div>
     </div>
   </div>
+
+  <!-- Integración con MercadoPago y Pagos -->
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-body-tertiary border-0 py-3">
+      <h5 class="mb-0 text-primary"><i class="bi bi-wallet2"></i> Integración con MercadoPago y Pagos</h5>
+    </div>
+    <div class="card-body">
+      {% if object.mercadopago_access_token %}
+        <!-- Cuenta vinculada exitosamente -->
+        <div class="alert alert-success border-0 shadow-sm d-flex flex-column flex-md-row align-items-md-center justify-content-between p-3 mb-4">
+          <div class="d-flex align-items-center mb-3 mb-md-0">
+            <i class="bi bi-patch-check-fill me-3 fs-3 text-success"></i>
+            <div>
+              <h6 class="alert-heading mb-1 fw-bold text-success">Cuenta de MercadoPago Vinculada</h6>
+              <p class="mb-0 text-success-emphasis small">ID de usuario de MercadoPago: <strong>{{ object.mercadopago_user_id }}</strong></p>
+            </div>
+          </div>
+          <div>
+            <a href="{% url 'mercadopago_unlink' %}" class="btn btn-outline-danger btn-sm px-3 py-2 fw-semibold" onclick="return confirm('¿Estás seguro de que deseas desvincular tu cuenta de MercadoPago? Se desactivarán los cobros digitales.');">
+              <i class="bi bi-trash3-fill me-1"></i> Desvincular cuenta
+            </a>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          {{ form.mercadopago_active|as_crispy_field }}
+        </div>
+        
+        <div id="mercadopago-fields-wrapper" style="transition: all 0.3s ease;">
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              {{ form.default_allow_prepayment|as_crispy_field }}
+            </div>
+            <div class="col-md-6 mb-3">
+              {{ form.default_allow_on_site_payment|as_crispy_field }}
+            </div>
+          </div>
+
+          <hr class="my-4">
+
+          <div class="mb-3">
+            {{ form.requires_deposit|as_crispy_field }}
+          </div>
+
+          <div id="deposit-fields-wrapper" class="row" style="transition: all 0.3s ease;">
+            <div class="col-md-6 mb-3">
+              {{ form.default_deposit_type|as_crispy_field }}
+            </div>
+            <div class="col-md-6 mb-3">
+              {{ form.default_deposit_value|as_crispy_field }}
+            </div>
+          </div>
+        </div>
+      {% else %}
+        <!-- Cuenta no vinculada -->
+        <div class="alert alert-warning border-0 shadow-sm d-flex align-items-start p-3 mb-4">
+          <i class="bi bi-exclamation-triangle-fill me-3 fs-4 text-warning"></i>
+          <div>
+            <h6 class="alert-heading mb-1 fw-bold text-warning">MercadoPago no configurado</h6>
+            <p class="mb-0 text-warning-emphasis small">Para poder recibir cobros digitales en tu peluquería (señas o pagos adelantados), debes vincular tu cuenta de MercadoPago.</p>
+          </div>
+        </div>
+
+        <div class="d-grid gap-2 mb-4">
+          <a href="{% url 'mercadopago_auth_redirect' %}" class="btn btn-primary btn-lg d-flex align-items-center justify-content-center gap-2 shadow-sm py-3" style="background: linear-gradient(135deg, #009ee3, #007eb5); border: none; font-weight: 600; transition: transform 0.2s ease, box-shadow 0.2s ease;" onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 4px 12px rgba(0, 158, 227, 0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+            <i class="bi bi-wallet2 fs-4"></i> Vincular cuenta con MercadoPago
+          </a>
+        </div>
+
+        <!-- Campos ocultos para enviar datos seguros por defecto al guardar el formulario sin MP vinculado -->
+        <div style="display: none;">
+          <input type="checkbox" name="mercadopago_active" id="id_mercadopago_active">
+          <input type="checkbox" name="default_allow_prepayment" id="id_default_allow_prepayment">
+          <input type="checkbox" name="default_allow_on_site_payment" id="id_default_allow_on_site_payment" checked>
+          <input type="checkbox" name="requires_deposit" id="id_requires_deposit">
+          <select name="default_deposit_type" id="id_default_deposit_type">
+            <option value="FIXED" selected>Fijo</option>
+          </select>
+          <input type="number" name="default_deposit_value" id="id_default_deposit_value" value="0">
+        </div>
+      {% endif %}
+
   <div class="text-end mt-4">
     <button type="submit" class="btn btn-primary">Guardar</button>
   </div>
@@ -172,6 +271,45 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
   }
+
+  // --- DINAMISMO MERCADOPAGO ---
+  const mpActiveCheckbox = document.querySelector('#id_mercadopago_active');
+  const mpFieldsWrapper = document.querySelector('#mercadopago-fields-wrapper');
+  const requiresDepositCheckbox = document.querySelector('#id_requires_deposit');
+  const depositFieldsWrapper = document.querySelector('#deposit-fields-wrapper');
+
+  function toggleMercadoPagoFields() {
+    if (!mpActiveCheckbox || !mpFieldsWrapper) return;
+    if (mpActiveCheckbox.checked) {
+      mpFieldsWrapper.style.display = 'block';
+    } else {
+      mpFieldsWrapper.style.display = 'none';
+    }
+  }
+
+  function toggleDepositFields() {
+    if (!requiresDepositCheckbox || !depositFieldsWrapper || !mpActiveCheckbox) return;
+    if (requiresDepositCheckbox.checked && mpActiveCheckbox.checked) {
+      depositFieldsWrapper.style.display = 'flex';
+    } else {
+      depositFieldsWrapper.style.display = 'none';
+    }
+  }
+
+  if (mpActiveCheckbox) {
+    mpActiveCheckbox.addEventListener('change', () => {
+      toggleMercadoPagoFields();
+      toggleDepositFields();
+    });
+  }
+
+  if (requiresDepositCheckbox) {
+    requiresDepositCheckbox.addEventListener('change', toggleDepositFields);
+  }
+
+  // Ejecución inicial
+  toggleMercadoPagoFields();
+  toggleDepositFields();
 });
 </script>
 {% endblock %}

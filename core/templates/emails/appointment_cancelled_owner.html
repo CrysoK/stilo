@@ -22,7 +22,27 @@
         <span class="detail-label">Hora:</span>
         <span class="detail-value">{{ appointment.start_time|date:"H:i" }} hs</span>
     </div>
+    <div class="detail-row">
+        <span class="detail-label">Método de pago:</span>
+        <span class="detail-value">{{ appointment.get_payment_method_display }}</span>
+    </div>
+    {% if appointment.amount_paid > 0 %}
+    <div class="detail-row">
+        <span class="detail-label">Monto pagado online:</span>
+        <span class="detail-value">${{ appointment.amount_paid }}</span>
+    </div>
+    {% endif %}
 </div>
+
+{% if overbooked_refund or appointment.amount_paid > 0 %}
+<div style="background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 15px; border-radius: 4px; margin: 20px 0;">
+    {% if overbooked_refund %}
+        <strong>Sobreventa detectada:</strong> El turno se canceló automáticamente por superposición y se realizó un reembolso de ${{ appointment.amount_paid }} al cliente.
+    {% else %}
+        <strong>Información de pago:</strong> El cliente había realizado un pago online de ${{ appointment.amount_paid }}. Por favor, coordina con el cliente si corresponde realizar una devolución o reprogramar el turno.
+    {% endif %}
+</div>
+{% endif %}
 
 <p>Este espacio de tiempo ha quedado liberado y se encuentra disponible nuevamente para recibir otras reservas en la plataforma.</p>
 <p>Atentamente,<br>El equipo de Stilo</p>
