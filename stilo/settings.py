@@ -155,8 +155,8 @@ if DEBUG and not BREVO_API_KEY:
 else:
     EMAIL_BACKEND = "core.email_backend.BrevoEmailBackend"
 
-# Token de recordatorios
-REMINDER_TOKEN = config("REMINDER_TOKEN", default="desarrollo_secreto")
+# Secreto de seguridad para tareas programadas (cron)
+CRON_SECRET = config("CRON_SECRET", default="desarrollo_secreto")
 
 # Web Push VAPID keys
 VAPID_PUBLIC_KEY = config("VAPID_PUBLIC_KEY", default="")

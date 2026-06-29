@@ -318,7 +318,7 @@ class NotificationTestCase(TestCase):
 
         mail.outbox = []
 
-        url = reverse("send_reminders") + f"?token={settings.REMINDER_TOKEN}"
+        url = reverse("send_reminders") + f"?token={settings.CRON_SECRET}"
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -1501,7 +1501,7 @@ class CancelExpiredAppointmentsTestCase(TestCase):
 
         url = (
             reverse("cancel_expired_appointments_endpoint")
-            + f"?token={settings.REMINDER_TOKEN}"
+            + f"?token={settings.CRON_SECRET}"
         )
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
@@ -2008,7 +2008,7 @@ class PendingRefundTestCase(TestCase):
         response = self.client.get(url, {"token": "wrong_token"})
         self.assertEqual(response.status_code, 403)
 
-    @override_settings(REMINDER_TOKEN="secret_token_123")
+    @override_settings(CRON_SECRET="secret_token_123")
     @patch("core.utils.process_mercadopago_refund")
     def test_retry_refunds_cron_success(self, mock_refund):
         from core.models import PendingRefund
@@ -2042,7 +2042,7 @@ class PendingRefundTestCase(TestCase):
             amount=Decimal("200.00")
         )
 
-    @override_settings(REMINDER_TOKEN="secret_token_123")
+    @override_settings(CRON_SECRET="secret_token_123")
     @patch("core.utils.process_mercadopago_refund")
     def test_retry_refunds_cron_failure(self, mock_refund):
         from core.models import PendingRefund
@@ -2171,7 +2171,7 @@ class MercadoPagoOAuthRenewalTests(TestCase):
     @patch("requests.post")
     @patch("django.conf.settings.MERCADOPAGO_CLIENT_ID", "TEST_CLIENT_ID")
     @patch("django.conf.settings.MERCADOPAGO_CLIENT_SECRET", "TEST_CLIENT_SECRET")
-    @patch("django.conf.settings.REMINDER_TOKEN", "CRON_TOKEN")
+    @patch("django.conf.settings.CRON_SECRET", "CRON_TOKEN")
     def test_refresh_tokens_cron_success(self, mock_post):
         # Mock de la API de MercadoPago
         mock_response = MagicMock()
@@ -2203,7 +2203,7 @@ class MercadoPagoOAuthRenewalTests(TestCase):
     @patch("requests.post")
     @patch("django.conf.settings.MERCADOPAGO_CLIENT_ID", "TEST_CLIENT_ID")
     @patch("django.conf.settings.MERCADOPAGO_CLIENT_SECRET", "TEST_CLIENT_SECRET")
-    @patch("django.conf.settings.REMINDER_TOKEN", "CRON_TOKEN")
+    @patch("django.conf.settings.CRON_SECRET", "CRON_TOKEN")
     def test_refresh_tokens_cron_failure(self, mock_post):
         # Simular fallo en requests
         mock_post.side_effect = requests.exceptions.HTTPError("Error 400 Bad Request")
@@ -2226,7 +2226,7 @@ class MercadoPagoOAuthRenewalTests(TestCase):
         self.assertEqual(self.hairdresser.mercadopago_refresh_token, "OLD_REFRESH_TOKEN")
 
     @patch("requests.post")
-    @patch("django.conf.settings.REMINDER_TOKEN", "CRON_TOKEN")
+    @patch("django.conf.settings.CRON_SECRET", "CRON_TOKEN")
     def test_refresh_tokens_cron_no_refresh_needed(self, mock_post):
         # Cambiar fecha de expiración a 40 días en el futuro (no requiere refresco porque es > 30 días)
         self.hairdresser.mercadopago_token_expires_at = timezone.now() + timedelta(days=40)

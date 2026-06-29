@@ -1455,9 +1455,9 @@ def send_reminders_view(request):
     Endpoint para enviar recordatorios de turnos programados para el día siguiente.
     Protegido por un token/clave secreta.
     """
-    token = request.GET.get("token") or request.headers.get("X-Reminder-Token")
+    token = request.GET.get("token") or request.headers.get("X-Cron-Secret")
     from django.conf import settings
-    if not token or token != settings.REMINDER_TOKEN:
+    if not token or token != settings.CRON_SECRET:
         return JsonResponse({"error": "No autorizado"}, status=403)
 
     import datetime
@@ -1703,9 +1703,9 @@ def cancel_expired_appointments_view(request):
     Endpoint para cancelar los turnos PENDING cuyo tiempo de espera de pago ha expirado.
     Protegido por token/clave secreta.
     """
-    token = request.GET.get("token") or request.headers.get("X-Reminder-Token")
+    token = request.GET.get("token") or request.headers.get("X-Cron-Secret")
     from django.conf import settings
-    if not token or token != settings.REMINDER_TOKEN:
+    if not token or token != settings.CRON_SECRET:
         return JsonResponse({"error": "No autorizado"}, status=403)
 
     from django.utils import timezone
@@ -1742,9 +1742,9 @@ def retry_refunds_cron_view(request):
     Endpoint cron para procesar la cola de reembolsos pendientes.
     Protegido por token/clave secreta.
     """
-    token = request.GET.get("token") or request.headers.get("X-Reminder-Token")
+    token = request.GET.get("token") or request.headers.get("X-Cron-Secret")
     from django.conf import settings
-    if not token or token != settings.REMINDER_TOKEN:
+    if not token or token != settings.CRON_SECRET:
         return JsonResponse({"error": "No autorizado"}, status=403)
 
     from core.models import PendingRefund
@@ -1902,9 +1902,9 @@ def refresh_mercadopago_tokens_cron_view(request):
     Endpoint de cron para renovar de forma automática los tokens de MercadoPago
     próximos a expirar (menos de 30 días restantes) o vacíos (para compatibilidad).
     """
-    token = request.GET.get("token") or request.headers.get("X-Reminder-Token")
+    token = request.GET.get("token") or request.headers.get("X-Cron-Secret")
     from django.conf import settings
-    if not token or token != settings.REMINDER_TOKEN:
+    if not token or token != settings.CRON_SECRET:
         return JsonResponse({"error": "No autorizado"}, status=403)
 
     from core.models import Hairdresser
