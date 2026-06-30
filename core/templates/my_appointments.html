@@ -66,31 +66,41 @@
               {% endif %}
             {% endwith %}
         </div>
-        <div id="review-controls-{{ app.pk }}">
-            {% if app.status == 'COMPLETED' %}
-                {% if not app.review %}
-                    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#reviewFormModal"
-                            data-mode="create" data-appointment-pk="{{ app.pk }}">
-                        Dejar reseña
-                    </button>
-                {% else %}
-                    <div class="text-muted text-end">
-                        <small>Tu calificación:</small><br>
-                        <div class="review-stars-display" id="stars-for-review-{{ app.review.pk }}">
-                            {% include 'includes/star_rating.html' with rating=app.review.rating %}
+        <div class="text-end d-flex flex-column align-items-end justify-content-between" style="min-height: 80px;">
+            <div id="review-controls-{{ app.pk }}">
+                {% if app.status == 'COMPLETED' %}
+                    {% if not app.review %}
+                        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#reviewFormModal"
+                                data-mode="create" data-appointment-pk="{{ app.pk }}">
+                            Dejar reseña
+                        </button>
+                    {% else %}
+                        <div class="text-muted text-end">
+                            <small>Tu calificación:</small><br>
+                            <div class="review-stars-display" id="stars-for-review-{{ app.review.pk }}">
+                                {% include 'includes/star_rating.html' with rating=app.review.rating %}
+                            </div>
+                            <div class="mt-2">
+                                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal"
+                                         data-bs-target="#reviewFormModal" data-mode="edit" data-review-pk="{{ app.review.pk }}">
+                                     <i class="bi bi-pencil"></i> Editar
+                                 </button>
+                                 <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal"
+                                         data-bs-target="#deleteReviewModal" data-review-pk="{{ app.review.pk }}">
+                                     <i class="bi bi-trash"></i> Borrar
+                                 </button>
+                            </div>
                         </div>
-                        <div class="mt-2">
-                             <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal"
-                                     data-bs-target="#reviewFormModal" data-mode="edit" data-review-pk="{{ app.review.pk }}">
-                                 <i class="bi bi-pencil"></i> Editar
-                             </button>
-                             <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal"
-                                     data-bs-target="#deleteReviewModal" data-review-pk="{{ app.review.pk }}">
-                                 <i class="bi bi-trash"></i> Borrar
-                             </button>
-                        </div>
-                    </div>
+                    {% endif %}
                 {% endif %}
+            </div>
+            {% if app.can_be_cancelled_by_client %}
+                <button type="button" class="btn btn-outline-danger btn-sm cancel-appointment-btn mt-auto" 
+                        data-bs-toggle="modal" data-bs-target="#cancelAppointmentModal" 
+                        data-appointment-id="{{ app.pk }}" data-appointment-time="{{ app.start_time|date:'d/m/Y H:i' }}"
+                        data-appointment-service="{{ app.service.name }}">
+                    <i class="bi bi-x-circle"></i> Cancelar Turno
+                </button>
             {% endif %}
         </div>
     </div>
@@ -152,6 +162,41 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                     <button type="submit" class="btn btn-danger">Sí, borrar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Cancel Appointment Confirmation Modal -->
+<div class="modal fade" id="cancelAppointmentModal" tabindex="-1" aria-labelledby="cancelAppointmentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0 bg-dark text-light">
+            <div class="modal-header border-bottom border-secondary">
+                <h5 class="modal-title d-flex align-items-center gap-2" id="cancelAppointmentModalLabel">
+                    <i class="bi bi-exclamation-triangle-fill text-danger"></i> Confirmar Cancelación
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="cancelAppointmentForm" method="post">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <p>¿Estás seguro de que deseas cancelar tu turno para <strong id="cancel-service-name" class="text-info"></strong> el día <strong id="cancel-datetime" class="text-info"></strong>?</p>
+                    <div class="alert alert-warning border-0 bg-opacity-10 bg-warning text-warning d-flex align-items-start gap-2 mt-3">
+                        <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
+                        <div>
+                            <strong>Importante:</strong> Esta acción no se puede deshacer. 
+                            Si realizaste un pago online (seña o total), se gestionará el reembolso correspondiente a tu cuenta.
+                        </div>
+                    </div>
+                    <div id="cancelFormErrors" class="alert alert-danger d-none mt-3"></div>
+                </div>
+                <div class="modal-footer border-top border-secondary">
+                    <button type="button" class="btn btn-outline-secondary text-light" data-bs-dismiss="modal">Mantener Turno</button>
+                    <button type="submit" class="btn btn-danger d-flex align-items-center gap-2" id="confirm-cancel-btn">
+                        <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="cancel-spinner"></span>
+                        Sí, Cancelar Turno
+                    </button>
                 </div>
             </form>
         </div>
@@ -259,6 +304,83 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     });
+
+    // --- Cancel Appointment Modal Logic ---
+    const cancelModalEl = document.getElementById('cancelAppointmentModal');
+    const cancelModal = cancelModalEl ? new bootstrap.Modal(cancelModalEl) : null;
+    const cancelForm = document.getElementById('cancelAppointmentForm');
+    const cancelSpinner = document.getElementById('cancel-spinner');
+    const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+    const cancelFormErrors = document.getElementById('cancelFormErrors');
+    const cancelServiceName = document.getElementById('cancel-service-name');
+    const cancelDatetime = document.getElementById('cancel-datetime');
+
+    if (cancelModalEl) {
+        cancelModalEl.addEventListener('show.bs.modal', function(event) {
+            const button = event.relatedTarget;
+            const appointmentId = button.getAttribute('data-appointment-id');
+            const appointmentTime = button.getAttribute('data-appointment-time');
+            const appointmentService = button.getAttribute('data-appointment-service');
+            
+            cancelServiceName.textContent = appointmentService;
+            cancelDatetime.textContent = appointmentTime;
+            
+            cancelFormErrors.classList.add('d-none');
+            cancelFormErrors.textContent = '';
+            
+            cancelForm.action = `{% url 'cancel_appointment_client' 0 %}`.replace('0', appointmentId);
+        });
+
+        cancelForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // Show loading state
+            cancelSpinner.classList.remove('d-none');
+            confirmCancelBtn.disabled = true;
+            cancelFormErrors.classList.add('d-none');
+            
+            const formData = new FormData(cancelForm);
+            
+            fetch(cancelForm.action, {
+                method: 'POST',
+                body: new URLSearchParams(formData),
+                headers: {
+                    'X-CSRFToken': formData.get('csrfmiddlewaretoken'),
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw new Error(data.message || 'Error al cancelar el turno.');
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                cancelSpinner.classList.add('d-none');
+                confirmCancelBtn.disabled = false;
+                cancelModal.hide();
+                
+                // Show feedback message and reload after a short delay
+                if (typeof showFeedbackMessage === 'function') {
+                    showFeedbackMessage(data.message || 'Turno cancelado correctamente.', 'success');
+                } else {
+                    alert(data.message || 'Turno cancelado correctamente.');
+                }
+                
+                setTimeout(() => {
+                    location.reload();
+                }, 1500);
+            })
+            .catch(error => {
+                cancelSpinner.classList.add('d-none');
+                confirmCancelBtn.disabled = false;
+                cancelFormErrors.textContent = error.message;
+                cancelFormErrors.classList.remove('d-none');
+            });
+        });
+    }
 });
 </script>
 {% endblock %}

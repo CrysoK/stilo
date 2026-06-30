@@ -498,6 +498,22 @@ class Appointment(models.Model):
                     subject="Reserva Cancelada - Stilo",
                 )
 
+    def can_be_cancelled_by_client(self):
+        """
+        Determina si el cliente puede cancelar este turno.
+        Reglas:
+        - El estado debe ser PENDING o CONFIRMED.
+        - Debe faltar más de 2 horas para la hora de inicio de la cita.
+        """
+        from django.utils import timezone
+        import datetime
+
+        if self.status not in ["PENDING", "CONFIRMED"]:
+            return False
+        
+        now = timezone.now()
+        return self.start_time > now + datetime.timedelta(hours=2)
+
     def get_payment_status_info(self):
         """
         Devuelve un dict con la información de pago para mostrar en la UI:

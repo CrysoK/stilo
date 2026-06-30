@@ -1898,6 +1898,193 @@ class OwnerCancellationRefundTestCase(TestCase):
         self.assertEqual(app.status, "COMPLETED")
 
 
+class ClientCancellationRefundTestCase(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            username="owner_cancel",
+            password="password123",
+            first_name="Owner",
+            last_name="Cancel",
+            email="owner_cancel@test.com",
+            is_owner=True,
+        )
+        self.hairdresser = Hairdresser.objects.create(
+            owner=self.owner,
+            name="Cancel Salon",
+            address="Av. Siempre Viva 123",
+            mercadopago_active=True,
+            mercadopago_access_token="APP_USR-test-token",
+            requires_deposit=True,
+            default_deposit_type="PERCENTAGE",
+            default_deposit_value=Decimal("20.00"),
+            default_allow_prepayment=True,
+            default_allow_on_site_payment=True,
+        )
+        self.client_user = User.objects.create_user(
+            username="client_cancel",
+            password="password123",
+            first_name="Client",
+            last_name="Cancel",
+            email="client_cancel@test.com",
+            is_owner=False,
+        )
+        self.service = Service.objects.create(
+            hairdresser=self.hairdresser,
+            name="Corte Express",
+            price=Decimal("1000.00"),
+            duration_minutes=30,
+        )
+        self.client = Client()
+        self.client.login(username="client_cancel", password="password123")
+
+    def test_client_cancel_success_no_payment(self):
+        import datetime
+        from django.utils import timezone
+
+        app = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=timezone.now() + datetime.timedelta(days=1),
+            amount=self.service.price,
+            status="CONFIRMED",
+            amount_paid=Decimal("0.00"),
+        )
+        url = reverse("cancel_appointment_client", args=[app.pk])
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "success")
+        app.refresh_from_db()
+        self.assertEqual(app.status, "CANCELLED")
+
+    @patch("core.utils.process_mercadopago_refund")
+    def test_client_cancel_success_with_refund(self, mock_refund):
+        import datetime
+        from django.utils import timezone
+
+        app = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=timezone.now() + datetime.timedelta(days=1),
+            amount=self.service.price,
+            status="CONFIRMED",
+            amount_paid=Decimal("200.00"),
+            mercadopago_payment_id="123456",
+        )
+        mock_refund.return_value = {
+            "success": True,
+            "refund_id": "refund_999",
+            "error": None,
+        }
+        url = reverse("cancel_appointment_client", args=[app.pk])
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "success")
+        app.refresh_from_db()
+        self.assertEqual(app.status, "CANCELLED")
+        mock_refund.assert_called_once_with(
+            hairdresser=self.hairdresser, payment_id="123456", amount=Decimal("200.00")
+        )
+
+    @patch("core.utils.process_mercadopago_refund")
+    def test_client_cancel_success_with_refund_failed(self, mock_refund):
+        import datetime
+        from django.utils import timezone
+        from core.models import PendingRefund
+
+        app = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=timezone.now() + datetime.timedelta(days=1),
+            amount=self.service.price,
+            status="CONFIRMED",
+            amount_paid=Decimal("200.00"),
+            mercadopago_payment_id="123456",
+        )
+        mock_refund.return_value = {
+            "success": False,
+            "refund_id": None,
+            "error": "Insufficient balance",
+        }
+        url = reverse("cancel_appointment_client", args=[app.pk])
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "success")
+        self.assertIn("falló y se reintentará", response.json()["message"])
+        app.refresh_from_db()
+        self.assertEqual(app.status, "CANCELLED")
+
+        pending = PendingRefund.objects.filter(appointment=app)
+        self.assertTrue(pending.exists())
+        self.assertEqual(pending.first().payment_id, "123456")
+        self.assertEqual(pending.first().amount, Decimal("200.00"))
+        self.assertEqual(pending.first().last_error, "Insufficient balance")
+
+    def test_client_cancel_time_limit_fails(self):
+        import datetime
+        from django.utils import timezone
+
+        app = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=timezone.now() + datetime.timedelta(hours=1),
+            amount=self.service.price,
+            status="PENDING",
+            amount_paid=Decimal("0.00"),
+        )
+        url = reverse("cancel_appointment_client", args=[app.pk])
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["status"], "error")
+        self.assertIn("hasta 2 horas antes", response.json()["message"])
+        app.refresh_from_db()
+        self.assertEqual(app.status, "PENDING")
+
+    def test_client_cancel_invalid_status_fails(self):
+        import datetime
+        from django.utils import timezone
+
+        app = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=timezone.now() + datetime.timedelta(days=1),
+            amount=self.service.price,
+            status="COMPLETED",
+            amount_paid=Decimal("0.00"),
+        )
+        url = reverse("cancel_appointment_client", args=[app.pk])
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["status"], "error")
+        app.refresh_from_db()
+        self.assertEqual(app.status, "COMPLETED")
+
+    def test_client_cancel_unauthorized_fails(self):
+        import datetime
+        from django.utils import timezone
+
+        other_user = User.objects.create_user(
+            username="other_client",
+            password="password123",
+            first_name="Other",
+            last_name="Client",
+            email="other@test.com",
+            is_owner=False,
+        )
+        app = Appointment.objects.create(
+            client=other_user,
+            service=self.service,
+            start_time=timezone.now() + datetime.timedelta(days=1),
+            amount=self.service.price,
+            status="PENDING",
+            amount_paid=Decimal("0.00"),
+        )
+        url = reverse("cancel_appointment_client", args=[app.pk])
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 404)
+        app.refresh_from_db()
+        self.assertEqual(app.status, "PENDING")
+
+
 from django.test import RequestFactory, override_settings
 from core.webhooks import _verify_mp_signature
 import hmac

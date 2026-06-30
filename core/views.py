@@ -1588,6 +1588,89 @@ def update_appointment_status(request, pk):
 
 @login_required
 @require_POST
+def cancel_appointment_client(request, pk):
+    # Asegurarse de que el turno pertenece al cliente logueado
+    appointment = get_object_or_404(Appointment, pk=pk, client=request.user)
+
+    try:
+
+        # Validar si el cliente puede cancelar el turno según las reglas de negocio
+        if not appointment.can_be_cancelled_by_client():
+            if appointment.status not in ["PENDING", "CONFIRMED"]:
+                return JsonResponse(
+                    {"status": "error", "message": "Este turno no se puede cancelar en su estado actual."},
+                    status=400
+                )
+            else:
+                return JsonResponse(
+                    {"status": "error", "message": "Solo puedes cancelar el turno hasta 2 horas antes de la cita."},
+                    status=400
+                )
+
+        refund_status = None
+        if appointment.amount_paid > 0:
+            from core.utils import process_mercadopago_refund, get_mercadopago_payment_id_from_api
+            from decimal import Decimal
+
+            # Si no tiene payment_id guardado, intentar obtenerlo de la API (fallback)
+            payment_id = appointment.mercadopago_payment_id
+            if not payment_id:
+                payment_id = get_mercadopago_payment_id_from_api(
+                    hairdresser=appointment.service.hairdresser,
+                    appointment_id=appointment.id
+                )
+                if payment_id:
+                    # Guardar el payment_id para futuras referencias
+                    appointment.mercadopago_payment_id = payment_id
+                    appointment.save(update_fields=['mercadopago_payment_id'])
+            
+            if payment_id:
+                refund_result = process_mercadopago_refund(
+                    hairdresser=appointment.service.hairdresser,
+                    payment_id=payment_id,
+                    amount=Decimal(str(appointment.amount_paid))
+                )
+                
+                if refund_result['success']:
+                    refund_status = 'success'
+                else:
+                    refund_status = 'pending'
+                    error_detail = refund_result.get('error', 'Error desconocido')
+                    from core.models import PendingRefund
+                    PendingRefund.objects.get_or_create(
+                        appointment=appointment,
+                        defaults={
+                            'payment_id': payment_id,
+                            'amount': Decimal(str(appointment.amount_paid)),
+                            'last_error': error_detail
+                        }
+                    )
+            else:
+                # No se pudo obtener payment_id para refund - No cancelar si hay dinero
+                return JsonResponse({
+                    "status": "error", 
+                    "message": f"No se pudo localizar el pago en MercadoPago para procesar el reembolso de ${appointment.amount_paid}. El turno no fue cancelado. Por favor contacta al local."
+                }, status=402)
+
+        # Cambiar el estado a CANCELLED y guardar.
+        appointment.status = 'CANCELLED'
+        appointment.save()
+
+        # Generar respuesta de éxito descriptiva
+        response_msg = "Turno cancelado exitosamente."
+        if refund_status == 'success':
+            response_msg = f"✓ Turno cancelado y reembolso de ${appointment.amount_paid} procesado exitosamente."
+        elif refund_status == 'pending':
+            response_msg = f"✓ Turno cancelado. El reembolso de ${appointment.amount_paid} falló y se reintentará automáticamente."
+
+        return JsonResponse({"status": "success", "message": response_msg})
+
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+@login_required
+@require_POST
 def adjust_appointment_time(request, pk):
     if not request.user.is_owner:
         return JsonResponse(

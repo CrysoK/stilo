@@ -23,6 +23,7 @@ from .views import (
     busiest_days_chart_data,
     WorkstationView,
     update_appointment_status,
+    cancel_appointment_client,
     adjust_appointment_time,
     accept_early_start,
     MyHairdresserInfoView,
@@ -129,6 +130,11 @@ urlpatterns = [
         name="hairdresser_detail",
     ),
     path("my-appointments/", AppointmentListView.as_view(), name="my_appointments"),
+    path(
+        "my-appointments/<int:pk>/cancel/",
+        cancel_appointment_client,
+        name="cancel_appointment_client",
+    ),
     path(
         "appointment/<int:pk>/review/create/",
         ReviewCreateView.as_view(),
