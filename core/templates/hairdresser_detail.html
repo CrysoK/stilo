@@ -15,6 +15,38 @@
     --bs-popover-header-bg: #dc3545;
     --bs-popover-header-color: #fff;
   }
+  .reserved-event {
+    opacity: 0.75;
+    background: repeating-linear-gradient(
+      45deg,
+      #6c757d,
+      #6c757d 8px,
+      #5a6268 8px,
+      #5a6268 16px
+    ) !important;
+    border-color: #545b62 !important;
+  }
+  .reserved-event, .reserved-event * {
+    cursor: not-allowed !important;
+  }
+  .fc-day-past {
+    background-color: rgba(33, 37, 41, 0.5) !important;
+    opacity: 0.6;
+  }
+  .fc-day-past, .fc-day-past * {
+    cursor: not-allowed !important;
+  }
+  /* Cursor pointer to indicate active/clickable cells */
+  .fc-timegrid-col, .fc-timegrid-col-frame, .fc-daygrid-day {
+    cursor: pointer;
+  }
+  /* Allow clicks to fall through transparent grid overlays to the columns underneath */
+  .fc-timegrid-slots {
+    pointer-events: none;
+  }
+  .fc-timegrid-cols {
+    pointer-events: auto;
+  }
   .carousel-image-responsive {
     aspect-ratio: 16 / 7;
     object-fit: cover;
@@ -199,13 +231,33 @@
       if (popover) {
         popover.dispose();
       }
+      if (el.parentNode && el.tagName === 'DIV' && el.style.position === 'absolute') {
+        el.remove();
+      }
     });
     let element = target;
     if (event && !element) {
+      let pageX = 0;
+      let pageY = 0;
+      if (event.pageX !== undefined && event.pageX !== 0) {
+        pageX = event.pageX;
+        pageY = event.pageY;
+      } else if (event.touches && event.touches.length > 0) {
+        pageX = event.touches[0].pageX;
+        pageY = event.touches[0].pageY;
+      } else if (event.changedTouches && event.changedTouches.length > 0) {
+        pageX = event.changedTouches[0].pageX;
+        pageY = event.changedTouches[0].pageY;
+      } else if (event.clientX !== undefined) {
+        pageX = event.clientX + window.scrollX;
+        pageY = event.clientY + window.scrollY;
+      }
+
       element = document.createElement('div');
       element.style.position = 'absolute';
-      element.style.left = event.pageX + 'px';
-      element.style.top = (event.pageY - 10) + 'px';
+      element.style.left = pageX + 'px';
+      element.style.top = (pageY - 10) + 'px';
+      element.setAttribute('data-bs-toggle', 'popover');
       document.body.appendChild(element);
     }
     const popover = new bootstrap.Popover(element, {
@@ -215,7 +267,11 @@
     setTimeout(() => {
       popover.hide();
       if (event && !target) {
-        setTimeout(() => element.remove(), 150);
+        setTimeout(() => {
+          if (element.parentNode) {
+            element.remove();
+          }
+        }, 150);
       }
     }, 2000);
   }
@@ -462,6 +518,44 @@
           if (proposedEndTime > workDayEndTime) {
               showPopover(null, "El servicio finaliza fuera del horario de atención.", info.jsEvent);
               return;
+          }
+
+          // Check if it overlaps with any reserved appointments
+          const reservedEvents = calendar.getEvents().filter(e => e.display !== 'background' && e.groupId !== 'working_hours');
+          
+          // Check if the clicked start time itself falls inside a reserved event
+          let clickedOnReserved = false;
+          for (const event of reservedEvents) {
+            const eventStart = event.start;
+            const eventEnd = event.end;
+            if (eventStart && eventEnd) {
+              if (clickedTime >= eventStart && clickedTime < eventEnd) {
+                clickedOnReserved = true;
+                break;
+              }
+            }
+          }
+          if (clickedOnReserved) {
+            showPopover(null, "Este horario ya está reservado.", info.jsEvent);
+            return;
+          }
+
+          // Check if the proposed appointment duration overlaps with any reserved event
+          let overlaps = false;
+          for (const event of reservedEvents) {
+            const eventStart = event.start;
+            const eventEnd = event.end;
+            if (eventStart && eventEnd) {
+              if (clickedTime < eventEnd && proposedEndTime > eventStart) {
+                overlaps = true;
+                break;
+              }
+            }
+          }
+
+          if (overlaps) {
+            showPopover(null, "El horario seleccionado se superpone con un turno ya reservado.", info.jsEvent);
+            return;
           }
 
           document.getElementById("modalServiceName").innerText = selectedService.name;

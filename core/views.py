@@ -283,14 +283,18 @@ class HairdresserDetailView(DetailView):
         if working_hours.exists():
             min_time = min(wh.start_time for wh in working_hours)
             max_time = max(wh.end_time for wh in working_hours)
-            min_dt = datetime.combine(datetime.min.date(), min_time)
-            max_dt = datetime.combine(datetime.min.date(), max_time)
-            context["slot_min_time"] = (min_dt - timedelta(hours=1)).strftime(
-                "%H:%M:%S"
-            )
-            context["slot_max_time"] = (max_dt + timedelta(hours=1)).strftime(
-                "%H:%M:%S"
-            )
+            
+            # Start slot 1 hour before min_time, but do not go below 00:00:00
+            min_hour = max(0, min_time.hour - 1)
+            context["slot_min_time"] = f"{min_hour:02d}:{min_time.minute:02d}:00"
+            
+            # End slot 1 hour after max_time, but cap at 24:00:00 to prevent overflow
+            max_hour = max_time.hour + 1
+            max_minute = max_time.minute
+            if max_hour > 24 or (max_hour == 24 and max_minute > 0):
+                context["slot_max_time"] = "24:00:00"
+            else:
+                context["slot_max_time"] = f"{max_hour:02d}:{max_minute:02d}:00"
         else:
             context["slot_min_time"] = "09:00:00"
             context["slot_max_time"] = "20:00:00"
@@ -1094,8 +1098,8 @@ def appointment_events_data(request, hairdresser_id):
                 "title": "Reservado",  # Por privacidad
                 "start": app.start_time.isoformat(),
                 "end": app.end_time.isoformat(),
-                "color": "#dc3545",
-                # "display": "background",
+                "color": "#6c757d",
+                "classNames": ["reserved-event"],
             }
         )
     return JsonResponse(events, safe=False)

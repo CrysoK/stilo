@@ -3297,3 +3297,86 @@ class AppointmentTimeAdjustmentTestCase(TestCase):
         self.assertFalse(offer.accepted)
 
 
+class AppointmentEventsTestCase(TestCase):
+    def setUp(self):
+        from core.models import User, Hairdresser, Service, Appointment
+        from decimal import Decimal
+        import datetime
+        from django.utils import timezone
+
+        # Crear dueño
+        self.owner = User.objects.create_user(
+            username="owner_ev",
+            password="password123",
+            first_name="Owner",
+            last_name="Test",
+            email="owner_ev@test.com",
+            is_owner=True,
+        )
+        self.hairdresser = Hairdresser.objects.create(
+            owner=self.owner, name="Peluquería Test", address="Calle Falsa 123"
+        )
+        self.service = Service.objects.create(
+            hairdresser=self.hairdresser,
+            name="Corte",
+            price=Decimal("1500.00"),
+            duration_minutes=30,
+        )
+        self.client_user = User.objects.create_user(
+            username="client_ev",
+            password="password123",
+            first_name="Client",
+            last_name="Test",
+            email="client_ev@test.com",
+            is_owner=False,
+        )
+        # Crear un turno confirmado
+        now = timezone.now().replace(microsecond=0)
+        self.app = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now,
+            amount=self.service.price,
+            status="CONFIRMED",
+        )
+
+    def test_appointment_events_data_contains_reserved_event_properties(self):
+        from django.urls import reverse
+        url = reverse("appointment_events", args=[self.hairdresser.pk])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        # Debe haber al menos un evento que represente el turno Reservado
+        reserved_events = [e for e in data if e.get("title") == "Reservado"]
+        self.assertTrue(len(reserved_events) > 0)
+        for event in reserved_events:
+            self.assertEqual(event.get("color"), "#6c757d")
+            self.assertIn("reserved-event", event.get("classNames", []))
+
+    def test_hairdresser_detail_slot_times_no_overflow(self):
+        from core.models import WorkingHours
+        import datetime
+        from django.urls import reverse
+
+        # Configurar horario de atención que cause desborde (hasta 23:30)
+        # day_of_week 1 = Martes
+        WorkingHours.objects.create(
+            hairdresser=self.hairdresser,
+            day_of_week=1,
+            start_time=datetime.time(9, 0),
+            end_time=datetime.time(23, 30),
+        )
+
+        url = reverse("hairdresser_detail", args=[self.hairdresser.pk])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        context = response.context
+        
+        # Debe calcular slot_min_time y slot_max_time sin desborde
+        self.assertEqual(context["slot_min_time"], "08:00:00")
+        self.assertEqual(context["slot_max_time"], "24:00:00")
+
+
+
+
