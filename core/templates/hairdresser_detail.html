@@ -373,14 +373,42 @@
       });
     }
 
+    const isMobileInit = window.innerWidth < 768;
+    let wasMobile = isMobileInit;
+
     let calendar = new FullCalendar.Calendar(calendarEl, {
       locale: 'es',
       themeSystem: 'bootstrap5',
-      initialView: 'timeGridWeek',
-      headerToolbar: {
+      initialView: isMobileInit ? 'timeGridDay' : 'timeGridWeek',
+      headerToolbar: isMobileInit ? {
+        left: 'prev,next',
+        center: 'title',
+        right: 'today,timeGridDay'
+      } : {
         left: 'prev,next today',
         center: 'title',
-        right: 'dayGridMonth,timeGridWeek'
+        right: 'dayGridMonth,timeGridWeek,timeGridDay'
+      },
+      windowResize: function(arg) {
+        const isMobile = window.innerWidth < 768;
+        if (isMobile !== wasMobile) {
+          wasMobile = isMobile;
+          this.setOption('headerToolbar', isMobile ? {
+            left: 'prev,next',
+            center: 'title',
+            right: 'today,timeGridDay'
+          } : {
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek,timeGridDay'
+          });
+          
+          if (isMobile && this.view.type === 'timeGridWeek') {
+            this.changeView('timeGridDay');
+          } else if (!isMobile && this.view.type === 'timeGridDay') {
+            this.changeView('timeGridWeek');
+          }
+        }
       },
       expandRows: true,
       slotMinTime: "{{ slot_min_time }}",
