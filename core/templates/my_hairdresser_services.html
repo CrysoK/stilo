@@ -41,7 +41,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <form method="post" id="serviceForm">
+        <form method="post" id="serviceForm" novalidate>
           {% csrf_token %}
           {{ service_form|crispy }}
           <div class="modal-footer pb-0">
@@ -139,6 +139,8 @@ document.addEventListener('DOMContentLoaded', function () {
       form.reset();
       form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
       form.querySelectorAll('.invalid-feedback').forEach(el => el.remove());
+      const existingAlert = form.querySelector('.alert-danger');
+      if (existingAlert) existingAlert.remove();
 
       if (mode === 'create') {
         modalTitle.textContent = 'Crear nuevo servicio';
@@ -177,6 +179,68 @@ document.addEventListener('DOMContentLoaded', function () {
             console.error('Error:', error);
           });
       }
+    });
+
+    // Interceptar el envío del formulario para procesar vía AJAX
+    form.addEventListener('submit', function(event) {
+      event.preventDefault();
+      
+      // Limpiar errores previos
+      form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+      form.querySelectorAll('.invalid-feedback').forEach(el => el.remove());
+      const existingAlert = form.querySelector('.alert-danger');
+      if (existingAlert) existingAlert.remove();
+      
+      const submitBtn = form.querySelector('[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
+      
+      fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      })
+      .then(response => {
+        return response.json().then(data => {
+          if (!response.ok) {
+            return Promise.reject(data);
+          }
+          return data;
+        });
+      })
+      .then(data => {
+        if (data.success) {
+          window.location.reload();
+        }
+      })
+      .catch(data => {
+        if (submitBtn) submitBtn.disabled = false;
+        if (data && data.errors) {
+          // Mostrar errores en los campos correspondientes
+          Object.keys(data.errors).forEach(field => {
+            const errorMessages = data.errors[field];
+            if (field === '__all__') {
+              const alertDiv = document.createElement('div');
+              alertDiv.className = 'alert alert-danger';
+              alertDiv.textContent = errorMessages.join(' ');
+              form.prepend(alertDiv);
+            } else {
+              const input = form.querySelector(`[name="${field}"]`);
+              if (input) {
+                input.classList.add('is-invalid');
+                const feedback = document.createElement('div');
+                feedback.className = 'invalid-feedback d-block';
+                feedback.textContent = errorMessages.join(', ');
+                input.parentNode.appendChild(feedback);
+              }
+            }
+          });
+        } else {
+          console.error('Error submitting form:', data);
+          alert('Ocurrió un error inesperado al guardar el servicio.');
+        }
+      });
     });
   }
 

@@ -121,9 +121,12 @@ class ServiceCreateView(OwnerRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.hairdresser = self.request.user.hairdresser_profile  # type: ignore
-        response = super().form_valid(form)
+        self.object = form.save()
         messages.success(self.request, "Servicio creado exitosamente.")
-        return response
+        return JsonResponse({"success": True})
+
+    def form_invalid(self, form):
+        return JsonResponse({"success": False, "errors": form.errors}, status=400)
 
     def get(self, request, *args, **kwargs):
         # Redirigir si se intenta acceder por GET, ya que el formulario está en un modal
@@ -141,9 +144,12 @@ class ServiceUpdateView(OwnerRequiredMixin, UpdateView):
         )
 
     def form_valid(self, form):
-        response = super().form_valid(form)
+        self.object = form.save()
         messages.success(self.request, "Servicio actualizado exitosamente.")
-        return response
+        return JsonResponse({"success": True})
+
+    def form_invalid(self, form):
+        return JsonResponse({"success": False, "errors": form.errors}, status=400)
 
     def get(self, request, *args, **kwargs):
         # Redirigir si se intenta acceder por GET

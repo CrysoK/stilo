@@ -2497,3 +2497,163 @@ class BrevoEmailBackendTestCase(TestCase):
         self.backend.fail_silently = False
         with self.assertRaises(requests.HTTPError):
             self.backend.send_messages([self.message])
+
+
+class ServiceViewsTestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        # Creamos usuario dueño
+        self.owner = User.objects.create_user(
+            username="owner_service_test",
+            password="password123",
+            first_name="Owner",
+            last_name="Test",
+            email="owner_service_test@test.com",
+            is_owner=True,
+        )
+        self.hairdresser = Hairdresser.objects.create(
+            owner=self.owner, name="Owner's Hairdresser", address="Test Address"
+        )
+        # Creamos otro usuario cliente (no dueño)
+        self.client_user = User.objects.create_user(
+            username="client_service_test",
+            password="password123",
+            first_name="Client",
+            last_name="Test",
+            email="client_service_test@test.com",
+            is_owner=False,
+        )
+
+    def test_service_create_success_ajax(self):
+        self.client.login(username="owner_service_test", password="password123")
+        response = self.client.post(
+            reverse("service_create"),
+            {
+                "name": "Corte de pelo",
+                "description": "Un corte clásico",
+                "price": "1200.00",
+                "duration_minutes": 30,
+                "override_deposit": "False",
+                "deposit_type": "FIXED",
+                "deposit_value": "0.00",
+                "override_payment_modes": "False",
+                "allow_prepayment": "True",
+                "allow_on_site_payment": "True",
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"success": True})
+        
+        # Verificar que el servicio se guardó en la DB
+        from core.models import Service
+        service = Service.objects.get(name="Corte de pelo")
+        self.assertEqual(service.hairdresser, self.hairdresser)
+        self.assertEqual(service.price, 1200.00)
+        self.assertEqual(service.duration_minutes, 30)
+
+    def test_service_create_invalid_negative_price(self):
+        self.client.login(username="owner_service_test", password="password123")
+        response = self.client.post(
+            reverse("service_create"),
+            {
+                "name": "Corte de pelo",
+                "description": "Un corte clásico",
+                "price": "-50.00",  # Precio negativo
+                "duration_minutes": 30,
+                "override_deposit": "False",
+                "deposit_type": "FIXED",
+                "deposit_value": "0.00",
+                "override_payment_modes": "False",
+                "allow_prepayment": "True",
+                "allow_on_site_payment": "True",
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertFalse(data["success"])
+        self.assertIn("price", data["errors"])
+
+    def test_service_create_invalid_negative_duration(self):
+        self.client.login(username="owner_service_test", password="password123")
+        response = self.client.post(
+            reverse("service_create"),
+            {
+                "name": "Corte de pelo",
+                "description": "Un corte clásico",
+                "price": "1200.00",
+                "duration_minutes": -5,  # Duración negativa
+                "override_deposit": "False",
+                "deposit_type": "FIXED",
+                "deposit_value": "0.00",
+                "override_payment_modes": "False",
+                "allow_prepayment": "True",
+                "allow_on_site_payment": "True",
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertFalse(data["success"])
+        self.assertIn("duration_minutes", data["errors"])
+
+    def test_service_update_success_ajax(self):
+        from core.models import Service
+        service = Service.objects.create(
+            hairdresser=self.hairdresser,
+            name="Corte viejo",
+            price=1000.00,
+            duration_minutes=25,
+        )
+        self.client.login(username="owner_service_test", password="password123")
+        response = self.client.post(
+            reverse("service_update", kwargs={"pk": service.pk}),
+            {
+                "name": "Corte nuevo",
+                "price": "1500.00",
+                "duration_minutes": 35,
+                "override_deposit": "False",
+                "deposit_type": "FIXED",
+                "deposit_value": "0.00",
+                "override_payment_modes": "False",
+                "allow_prepayment": "True",
+                "allow_on_site_payment": "True",
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"success": True})
+        
+        service.refresh_from_db()
+        self.assertEqual(service.name, "Corte nuevo")
+        self.assertEqual(service.price, 1500.00)
+        self.assertEqual(service.duration_minutes, 35)
+
+    def test_service_create_unauthorized(self):
+        # Intentar crear servicio sin loguearse
+        response = self.client.post(
+            reverse("service_create"),
+            {
+                "name": "Corte de pelo",
+                "price": "1200.00",
+                "duration_minutes": 30,
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        # OwnerRequiredMixin redirecciona al login si no está logueado
+        self.assertEqual(response.status_code, 302)
+
+        # Logueado como cliente normal (no dueño)
+        self.client.login(username="client_service_test", password="password123")
+        response = self.client.post(
+            reverse("service_create"),
+            {
+                "name": "Corte de pelo",
+                "price": "1200.00",
+                "duration_minutes": 30,
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        # Redirecciona a home si es cliente y no dueño
+        self.assertEqual(response.status_code, 302)

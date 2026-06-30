@@ -16,6 +16,7 @@ from .models import (
     Review,
 )
 from datetime import timedelta
+from decimal import Decimal
 
 
 class UserProfileForm(forms.ModelForm):
@@ -49,8 +50,8 @@ class ServiceForm(forms.ModelForm):
     description = forms.CharField(
         label="Descripción", required=False, widget=forms.Textarea(attrs={"rows": 3})
     )
-    price = forms.DecimalField(label="Precio")
-    duration_minutes = forms.IntegerField(label="Duración (minutos)")
+    price = forms.DecimalField(label="Precio", min_value=Decimal('0.00'))
+    duration_minutes = forms.IntegerField(label="Duración (minutos)", min_value=1)
 
     class Meta:
         model = Service
