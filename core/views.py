@@ -2,7 +2,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy, reverse
 from django.http import HttpResponseRedirect, JsonResponse, Http404
 from django.utils import timezone
-from django.db.models import Sum, Count, Avg
+from django.db.models import Sum, Count, Avg, Q
 from decimal import Decimal
 from django.db.models.functions import TruncMonth
 from django.contrib.auth import login
@@ -184,11 +184,48 @@ class HomeView(ListView):
 
     def get_queryset(self):
         # Prefetch related objects for efficiency when calling is_complete() and images.exists()
-        return (
+        queryset = (
             super()
             .get_queryset()
             .prefetch_related("working_hours", "services", "images")
         )
+        
+        q = self.request.GET.get("q", "").strip()
+        service = self.request.GET.get("service", "").strip()
+        
+        if q:
+            queryset = queryset.filter(
+                Q(name__icontains=q) |
+                Q(address__icontains=q) |
+                Q(description__icontains=q)
+            )
+            
+        if service:
+            if service == "corte":
+                queryset = queryset.filter(services__name__icontains="corte")
+            elif service == "color":
+                queryset = queryset.filter(
+                    Q(services__name__icontains="color") |
+                    Q(services__name__icontains="tinte") |
+                    Q(services__name__icontains="mechas")
+                )
+            elif service == "barberia":
+                queryset = queryset.filter(
+                    Q(services__name__icontains="barba") |
+                    Q(services__name__icontains="barber")
+                )
+            elif service == "peinado":
+                queryset = queryset.filter(
+                    Q(services__name__icontains="peinado") |
+                    Q(services__name__icontains="secado")
+                )
+            elif service == "tratamientos":
+                queryset = queryset.filter(
+                    Q(services__name__icontains="tratamiento") |
+                    Q(services__name__icontains="keratina")
+                )
+                
+        return queryset.distinct()
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -197,10 +234,17 @@ class HomeView(ListView):
         complete_hairdressers = [h for h in self.get_queryset() if h.is_complete()]
         context["hairdressers"] = complete_hairdressers
 
-        # Get featured hairdressers from the complete ones that also have images
-        context["featured_hairdressers"] = [
-            h for h in complete_hairdressers if h.images.exists()
-        ][:5]
+        q = self.request.GET.get("q", "").strip()
+        service = self.request.GET.get("service", "").strip()
+
+        # Omitir destacados en búsquedas para centrar la atención en los resultados
+        if q or service:
+            context["featured_hairdressers"] = []
+        else:
+            # Get featured hairdressers from the complete ones that also have images
+            context["featured_hairdressers"] = [
+                h for h in complete_hairdressers if h.images.exists()
+            ][:5]
 
         fallback_coords = get_location_from_ip(self.request)
         context["fallback_lat"] = fallback_coords["lat"]
@@ -754,6 +798,46 @@ def hairdresser_map_data(request):
     hairdressers = Hairdresser.objects.filter(
         latitude__isnull=False, longitude__isnull=False
     )
+    
+    q = request.GET.get("q", "").strip()
+    service = request.GET.get("service", "").strip()
+    
+    if q:
+        hairdressers = hairdressers.filter(
+            Q(name__icontains=q) |
+            Q(address__icontains=q) |
+            Q(description__icontains=q)
+        )
+        
+    if service:
+        if service == "corte":
+            hairdressers = hairdressers.filter(services__name__icontains="corte")
+        elif service == "color":
+            hairdressers = hairdressers.filter(
+                Q(services__name__icontains="color") |
+                Q(services__name__icontains="tinte") |
+                Q(services__name__icontains="mechas")
+            )
+        elif service == "barberia":
+            hairdressers = hairdressers.filter(
+                Q(services__name__icontains="barba") |
+                Q(services__name__icontains="barber")
+            )
+        elif service == "peinado":
+            hairdressers = hairdressers.filter(
+                Q(services__name__icontains="peinado") |
+                Q(services__name__icontains="secado")
+            )
+        elif service == "tratamientos":
+            hairdressers = hairdressers.filter(
+                Q(services__name__icontains="tratamiento") |
+                Q(services__name__icontains="keratina")
+            )
+            
+    # Sincronizar con is_complete()
+    hairdressers = hairdressers.prefetch_related("working_hours", "services").distinct()
+    complete_hairdressers = [h for h in hairdressers if h.is_complete()]
+    
     data = [
         {
             "name": h.name,
@@ -761,7 +845,7 @@ def hairdresser_map_data(request):
             "lon": h.longitude,
             "url": reverse("hairdresser_detail", args=[h.pk]),
         }
-        for h in hairdressers
+        for h in complete_hairdressers
     ]
     return JsonResponse(data, safe=False)
 

@@ -2677,3 +2677,172 @@ class ServiceViewsTestCase(TestCase):
         )
         # Redirecciona a home si es cliente y no dueño
         self.assertEqual(response.status_code, 302)
+
+
+class HomeSearchFilterTestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        
+        # Creamos dueños
+        self.owner1 = User.objects.create_user(
+            username="owner1",
+            password="password123",
+            first_name="Owner1",
+            last_name="Test",
+            is_owner=True,
+        )
+        self.owner2 = User.objects.create_user(
+            username="owner2",
+            password="password123",
+            first_name="Owner2",
+            last_name="Test",
+            is_owner=True,
+        )
+
+        # Peluquería 1: "Barbería Premium"
+        # Dirección: "Calle Falsa 123"
+        # Descripción: "Los mejores cortes de barba"
+        self.hairdresser1 = Hairdresser.objects.create(
+            owner=self.owner1,
+            name="Barbería Premium",
+            address="Calle Falsa 123",
+            description="Los mejores cortes de barba",
+            latitude=-24.7821,
+            longitude=-65.4232,
+        )
+        # Horarios para que esté completa
+        from core.models import WorkingHours
+        WorkingHours.objects.create(
+            hairdresser=self.hairdresser1,
+            day_of_week=1,
+            start_time="09:00",
+            end_time="18:00",
+        )
+        # Servicio 1: "Corte y Barba"
+        from core.models import Service
+        self.service1 = Service.objects.create(
+            hairdresser=self.hairdresser1,
+            name="Corte y Barba",
+            price=1500.00,
+            duration_minutes=45,
+        )
+
+        # Peluquería 2: "Estilo & Color"
+        # Dirección: "Av. Siempre Viva 742"
+        # Descripción: "Especialistas en tintura y peinado"
+        self.hairdresser2 = Hairdresser.objects.create(
+            owner=self.owner2,
+            name="Estilo & Color",
+            address="Av. Siempre Viva 742",
+            description="Especialistas en tintura y peinado",
+            latitude=-24.7899,
+            longitude=-65.4111,
+        )
+        # Horarios para que esté completa
+        WorkingHours.objects.create(
+            hairdresser=self.hairdresser2,
+            day_of_week=2,
+            start_time="10:00",
+            end_time="19:00",
+        )
+        # Servicio 2: "Tinte Completo"
+        self.service2 = Service.objects.create(
+            hairdresser=self.hairdresser2,
+            name="Tinte Completo",
+            price=3000.00,
+            duration_minutes=90,
+        )
+
+        # Crear imágenes para que puedan ser consideradas destacadas (featured)
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from core.models import HairdresserImage
+        
+        dummy_image = SimpleUploadedFile(
+            name='test_image.jpg',
+            content=b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff\x21\xf9\x04\x01\x00\x00\x00\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b',
+            content_type='image/jpeg'
+        )
+        
+        img1 = HairdresserImage.objects.create(
+            hairdresser=self.hairdresser1,
+            image=dummy_image,
+            caption="Test cover 1"
+        )
+        self.hairdresser1.cover_image = img1
+        self.hairdresser1.save()
+
+        img2 = HairdresserImage.objects.create(
+            hairdresser=self.hairdresser2,
+            image=dummy_image,
+            caption="Test cover 2"
+        )
+        self.hairdresser2.cover_image = img2
+        self.hairdresser2.save()
+
+    def test_home_view_no_filters(self):
+        response = self.client.get(reverse("home"))
+        self.assertEqual(response.status_code, 200)
+        hairdressers = response.context["hairdressers"]
+        self.assertEqual(len(hairdressers), 2)
+        # Al no haber filtros, destacados debería tener elementos
+        self.assertTrue(len(response.context["featured_hairdressers"]) > 0)
+
+    def test_home_view_filter_by_text(self):
+        # Buscar "Barbería"
+        response = self.client.get(reverse("home"), {"q": "Barbería"})
+        self.assertEqual(response.status_code, 200)
+        hairdressers = response.context["hairdressers"]
+        self.assertEqual(len(hairdressers), 1)
+        self.assertEqual(hairdressers[0].name, "Barbería Premium")
+        # El carrusel de destacados debe estar vacío si hay filtros activos
+        self.assertEqual(len(response.context["featured_hairdressers"]), 0)
+
+        # Buscar "Siempre Viva"
+        response = self.client.get(reverse("home"), {"q": "Siempre Viva"})
+        self.assertEqual(response.status_code, 200)
+        hairdressers = response.context["hairdressers"]
+        self.assertEqual(len(hairdressers), 1)
+        self.assertEqual(hairdressers[0].name, "Estilo & Color")
+
+        # Buscar término que no existe
+        response = self.client.get(reverse("home"), {"q": "Inexistente"})
+        self.assertEqual(response.status_code, 200)
+        hairdressers = response.context["hairdressers"]
+        self.assertEqual(len(hairdressers), 0)
+
+    def test_home_view_filter_by_service(self):
+        # Filtrar por "corte"
+        response = self.client.get(reverse("home"), {"service": "corte"})
+        self.assertEqual(response.status_code, 200)
+        hairdressers = response.context["hairdressers"]
+        self.assertEqual(len(hairdressers), 1)
+        self.assertEqual(hairdressers[0].name, "Barbería Premium")
+
+        # Filtrar por "color"
+        response = self.client.get(reverse("home"), {"service": "color"})
+        self.assertEqual(response.status_code, 200)
+        hairdressers = response.context["hairdressers"]
+        self.assertEqual(len(hairdressers), 1)
+        self.assertEqual(hairdressers[0].name, "Estilo & Color")
+
+    def test_map_data_filtered(self):
+        # Sin filtros
+        response = self.client.get(reverse("map_data"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data), 2)
+
+        # Filtrar por "barberia"
+        response = self.client.get(reverse("map_data"), {"service": "barberia"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["name"], "Barbería Premium")
+
+        # Buscar "Estilo"
+        response = self.client.get(reverse("map_data"), {"q": "Estilo"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["name"], "Estilo & Color")
+
