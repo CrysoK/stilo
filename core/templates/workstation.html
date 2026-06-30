@@ -2,6 +2,48 @@
 
 {% block title %}Hoy{% endblock %}
 
+{% block extra_head %}
+<style>
+/* CSS transition definitions for smooth card updates */
+.appointment-card-transition {
+    transition: opacity 0.4s ease, transform 0.4s ease, max-height 0.4s ease, margin 0.4s ease, padding 0.4s ease;
+    max-height: 500px;
+    overflow: hidden;
+}
+.appointment-card-transition.fade-out-shrink {
+    opacity: 0 !important;
+    max-height: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    border-top-width: 0 !important;
+    border-bottom-width: 0 !important;
+    transform: scale(0.95);
+}
+
+.fade-in-highlight {
+    animation: fadeInHighlight 0.6s ease-out forwards;
+}
+
+@keyframes fadeInHighlight {
+    0% {
+        opacity: 0;
+        transform: translateY(10px);
+        filter: brightness(1.2);
+    }
+    50% {
+        filter: brightness(1.2);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+        filter: brightness(1);
+    }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -18,7 +60,9 @@
                 <div class="card text-white bg-success mb-4" data-appointment-id="{{ current_appointment.pk }}">
                     <div class="card-header d-flex justify-content-between">
                         <h4 class="mb-0">Atendiendo ahora</h4>
-                        <span class="badge bg-light text-dark align-self-center">Finaliza en: <span class="countdown" data-countdown-to="{{ current_appointment.end_time.isoformat }}">--:--</span></span>
+                        <span class="badge bg-light text-dark align-self-center" id="current-badge">
+                            <span id="current-badge-text">Finaliza en:</span> <span class="countdown" data-countdown-to="{{ current_appointment.end_time.isoformat }}">--:--</span>
+                        </span>
                     </div>
                     <div class="card-body">
                         <h5 class="card-title">{{ current_appointment.client.first_name }} {{ current_appointment.client.last_name }}</h5>
@@ -55,7 +99,9 @@
                 <div class="card border-primary mb-4" data-appointment-id="{{ next_appointment.pk }}">
                     <div class="card-header d-flex justify-content-between bg-transparent">
                         <h4 class="mb-0 text-primary">Próximo cliente</h4>
-                        <span class="badge bg-primary align-self-center">Comienza en: <span class="countdown" data-countdown-to="{{ next_appointment.start_time.isoformat }}">--:--</span></span>
+                        <span class="badge bg-primary align-self-center" id="next-badge">
+                            <span id="next-badge-text">Comienza en:</span> <span class="countdown" data-countdown-to="{{ next_appointment.start_time.isoformat }}">--:--</span>
+                        </span>
                     </div>
                     <div class="card-body">
                         <h5 class="card-title">{{ next_appointment.client.first_name }} {{ next_appointment.client.last_name }}</h5>
@@ -124,7 +170,7 @@
             <h4 class="mb-3">Turnos finalizados hoy</h4>
             <div id="completed-list" class="list-group">
                 {% for app in completed_appointments %}
-                    <div class="list-group-item list-group-item-{{ app.status|lower|slice:'-1'|default:'secondary' }} {% if app.status == 'NO_SHOW' %}list-group-item-danger{% elif app.status == 'COMPLETED' %}list-group-item-success{% endif %}">
+                    <div class="list-group-item list-group-item-{{ app.status|lower|slice:'-1'|default:'secondary' }} {% if app.status == 'NO_SHOW' %}list-group-item-danger{% elif app.status == 'COMPLETED' %}list-group-item-success{% endif %}" data-appointment-id="{{ app.pk }}">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
                                <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.client.first_name }} {{ app.client.last_name }}
@@ -154,26 +200,120 @@
         </div>
     </div>
 
-    {% if pending_requests_count > 0 %}
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="alert alert-warning border-warning d-flex justify-content-between align-items-center shadow-sm mb-0">
-                <div class="d-flex align-items-center">
-                    <i class="bi bi-hourglass-split fs-4 me-2 text-warning"></i>
-                    <span>Tienes <strong>{{ pending_requests_count }}</strong> turno{{ pending_requests_count|pluralize }} a confirmar para los próximos días.</span>
+    <div id="pending-requests-section">
+        {% if pending_requests_count > 0 %}
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="alert alert-warning border-warning d-flex justify-content-between align-items-center shadow-sm mb-0">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-hourglass-split fs-4 me-2 text-warning"></i>
+                        <span>Tienes <strong>{{ pending_requests_count }}</strong> turno{{ pending_requests_count|pluralize }} a confirmar para los próximos días.</span>
+                    </div>
+                    <a href="{% url 'owner_appointments' %}?status=PENDING" class="btn btn-warning btn-sm fw-semibold">
+                        Ver y gestionar
+                    </a>
                 </div>
-                <a href="{% url 'owner_appointments' %}?status=PENDING" class="btn btn-warning btn-sm fw-semibold">
-                    Ver y gestionar
-                </a>
             </div>
         </div>
+        {% endif %}
     </div>
-    {% endif %}
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
+// Hacer global para poder invocarla tras actualizar el DOM dinámicamente
+let lastAutoUpdateTime = 0;
+
+function updateCountdowns() {
+    const countdownElements = document.querySelectorAll('.countdown');
+    let triggerUpdate = false;
+
+    countdownElements.forEach(el => {
+        const targetTime = new Date(el.dataset.countdownTo);
+        const now = new Date();
+        let diff = targetTime - now;
+
+        if (diff <= 0) {
+            el.textContent = "00:00";
+            
+            // Si es el contador del turno actual
+            const currentBadge = document.getElementById('current-badge');
+            const currentBadgeText = document.getElementById('current-badge-text');
+            if (currentBadge && currentBadge.contains(el)) {
+                currentBadge.className = "badge bg-danger text-white align-self-center";
+                if (currentBadgeText) {
+                    currentBadgeText.textContent = "Tiempo cumplido";
+                }
+                el.style.display = "none"; // Ocultar el "00:00"
+            }
+
+            // Si es el contador del próximo turno
+            const nextBadge = document.getElementById('next-badge');
+            const nextBadgeText = document.getElementById('next-badge-text');
+            if (nextBadge && nextBadge.contains(el)) {
+                nextBadge.className = "badge bg-warning text-dark align-self-center";
+                if (nextBadgeText) {
+                    nextBadgeText.textContent = "Demorado / En espera";
+                }
+                el.style.display = "none";
+            }
+
+            if (el.dataset.expired !== "true") {
+                el.dataset.expired = "true";
+                triggerUpdate = true;
+            }
+            return;
+        }
+
+        // Si no ha expirado, asegurarse de que sea visible y tenga los estilos originales
+        el.style.display = "";
+        const currentBadge = document.getElementById('current-badge');
+        const currentBadgeText = document.getElementById('current-badge-text');
+        if (currentBadge && currentBadge.contains(el)) {
+            currentBadge.className = "badge bg-light text-dark align-self-center";
+            if (currentBadgeText) {
+                currentBadgeText.textContent = "Finaliza en:";
+            }
+        }
+
+        const nextBadge = document.getElementById('next-badge');
+        const nextBadgeText = document.getElementById('next-badge-text');
+        if (nextBadge && nextBadge.contains(el)) {
+            nextBadge.className = "badge bg-primary align-self-center";
+            if (nextBadgeText) {
+                nextBadgeText.textContent = "Comienza en:";
+            }
+        }
+
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        diff -= hours * (1000 * 60 * 60);
+        const mins = Math.floor(diff / (1000 * 60));
+        diff -= mins * (1000 * 60);
+        const secs = Math.floor(diff / 1000);
+
+        let timeString = '';
+        if (hours > 0) {
+            timeString += `${String(hours).padStart(2, '0')}:`;
+        }
+        timeString += `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        el.textContent = timeString;
+    });
+
+    if (triggerUpdate) {
+        const nowMs = Date.now();
+        // Cooldown de 5 segundos para evitar bucles si hay desajuste de reloj cliente-servidor
+        if (nowMs - lastAutoUpdateTime > 5000) {
+            lastAutoUpdateTime = nowMs;
+            // Retardo de 1 segundo para asegurar que el backend también superó el tiempo objetivo
+            setTimeout(() => {
+                updateWorkstationDOM();
+            }, 1000);
+        }
+    }
+}
+
+
 document.addEventListener('DOMContentLoaded', function() {
     // Reloj en vivo
     const clockEl = document.getElementById('live-clock');
@@ -185,41 +325,96 @@ document.addEventListener('DOMContentLoaded', function() {
     updateClock();
     setInterval(updateClock, 1000);
 
-    // Lógica de los contadores
-    function updateCountdowns() {
-        const countdownElements = document.querySelectorAll('.countdown');
-        countdownElements.forEach(el => {
-            const targetTime = new Date(el.dataset.countdownTo);
-            const now = new Date();
-            let diff = targetTime - now;
-
-            if (diff <= 0) {
-                el.textContent = "00:00";
-                return;
-            }
-
-            const hours = Math.floor(diff / (1000 * 60 * 60));
-            diff -= hours * (1000 * 60 * 60);
-            const mins = Math.floor(diff / (1000 * 60));
-            diff -= mins * (1000 * 60);
-            const secs = Math.floor(diff / 1000);
-
-            let timeString = '';
-            if (hours > 0) {
-                timeString += `${String(hours).padStart(2, '0')}:`;
-            }
-            timeString += `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-            el.textContent = timeString;
-        });
-    }
-
+    // Inicializar y correr intervalo de contadores
     updateCountdowns();
     setInterval(updateCountdowns, 1000);
-
 });
+
+// Función para actualizar dinámicamente el DOM
+function updateWorkstationDOM(appointmentId, newStatus) {
+    fetch(window.location.href)
+    .then(response => response.text())
+    .then(html => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        // Secciones a actualizar
+        const sections = [
+            'current-appointment-section',
+            'next-appointment-section',
+            'upcoming-list',
+            'completed-list',
+            'pending-requests-section'
+        ];
+
+        // Guardar IDs anteriores para saber qué cambió
+        const oldCurrentCard = document.querySelector('#current-appointment-section [data-appointment-id]');
+        const oldCurrentId = oldCurrentCard ? oldCurrentCard.dataset.appointmentId : null;
+        
+        const oldNextCard = document.querySelector('#next-appointment-section [data-appointment-id]');
+        const oldNextId = oldNextCard ? oldNextCard.dataset.appointmentId : null;
+
+        // Reemplazar el contenido de cada sección
+        sections.forEach(id => {
+            const oldEl = document.getElementById(id);
+            const newEl = doc.getElementById(id);
+            if (oldEl && newEl) {
+                oldEl.innerHTML = newEl.innerHTML;
+            }
+        });
+
+        // 1. Si es COMPLETED, NO_SHOW o CANCELLED, animar el elemento en completed-list
+        if (['COMPLETED', 'NO_SHOW', 'CANCELLED'].includes(newStatus)) {
+            const completedItem = document.querySelector(`#completed-list [data-appointment-id="${appointmentId}"]`);
+            if (completedItem) {
+                completedItem.classList.add('fade-in-highlight');
+            }
+        }
+
+        // 2. Si el turno en curso cambió o ahora existe, animarlo
+        const newCurrentCard = document.querySelector('#current-appointment-section [data-appointment-id]');
+        const newCurrentId = newCurrentCard ? newCurrentCard.dataset.appointmentId : null;
+        if (newCurrentCard && newCurrentId !== oldCurrentId) {
+            newCurrentCard.classList.add('fade-in-highlight');
+        }
+
+        // 3. Si el próximo turno cambió o ahora existe, animarlo
+        const newNextCard = document.querySelector('#next-appointment-section [data-appointment-id]');
+        const newNextId = newNextCard ? newNextCard.dataset.appointmentId : null;
+        if (newNextCard && newNextId !== oldNextId) {
+            newNextCard.classList.add('fade-in-highlight');
+        }
+
+        // Actualizar los contadores inmediatamente
+        updateCountdowns();
+    })
+    .catch(error => {
+        console.error('Error al actualizar el DOM de la workstation:', error);
+        // Fallback en caso de error: recargar
+        location.reload();
+    });
+}
 
 // Función para manejar la actualización de estado
 function handleStatusUpdate(appointmentId, newStatus) {
+    const card = document.querySelector(`[data-appointment-id="${appointmentId}"]`);
+    let originalButtonsHtml = '';
+    let footerOrActionsEl = null;
+
+    if (card) {
+        // Encontrar el contenedor de los botones de acción para mostrar spinner
+        footerOrActionsEl = card.querySelector('.card-footer') || card.querySelector('.text-end');
+        if (footerOrActionsEl) {
+            originalButtonsHtml = footerOrActionsEl.innerHTML;
+            footerOrActionsEl.innerHTML = `
+                <div class="d-flex align-items-center justify-content-end gap-2 py-1">
+                    <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+                    <span class="small text-muted">Procesando...</span>
+                </div>
+            `;
+        }
+    }
+
     const csrfToken = '{{ csrf_token }}';
     const url = `{% url 'update_appointment_status' 0 %}`.replace('0', appointmentId);
 
@@ -236,15 +431,29 @@ function handleStatusUpdate(appointmentId, newStatus) {
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
-            // Recargar la página para ver los cambios. Forma más simple.
-            location.reload();
+            if (card) {
+                // Aplicar clases de transición y animación
+                card.classList.add('appointment-card-transition', 'fade-out-shrink');
+                // Esperar a que la transición termine (400ms) y luego actualizar el DOM
+                setTimeout(() => {
+                    updateWorkstationDOM(appointmentId, newStatus);
+                }, 400);
+            } else {
+                updateWorkstationDOM(appointmentId, newStatus);
+            }
         } else {
             alert(`Error: ${data.message}`);
+            if (footerOrActionsEl) {
+                footerOrActionsEl.innerHTML = originalButtonsHtml;
+            }
         }
     })
     .catch(error => {
         console.error('Fetch error:', error);
         alert('Ocurrió un error de conexión.');
+        if (footerOrActionsEl) {
+            footerOrActionsEl.innerHTML = originalButtonsHtml;
+        }
     });
 }
 </script>

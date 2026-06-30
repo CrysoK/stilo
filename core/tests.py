@@ -1756,6 +1756,26 @@ class OwnerCancellationRefundTestCase(TestCase):
         app.refresh_from_db()
         self.assertEqual(app.status, "CANCELLED")
 
+    def test_complete_pending_appointment(self):
+        import datetime
+        from django.utils import timezone
+
+        # Turno pendiente con amount_paid = 0
+        app = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=timezone.now() + datetime.timedelta(days=1),
+            amount=self.service.price,
+            status="PENDING",
+            amount_paid=Decimal("0.00"),
+        )
+        url = reverse("update_appointment_status", args=[app.pk])
+        response = self.client.post(url, {"status": "COMPLETED"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "success")
+        app.refresh_from_db()
+        self.assertEqual(app.status, "COMPLETED")
+
     @patch("core.utils.process_mercadopago_refund")
     def test_cancel_confirmed_with_payment_success(self, mock_refund):
         import datetime

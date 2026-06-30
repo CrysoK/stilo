@@ -1281,23 +1281,25 @@ class WorkstationView(OwnerRequiredMixin, TemplateView):
         upcoming_appointments = []
         completed_appointments = []
 
-        found_current = False
+        # Separar los turnos finalizados (completados, ausentes o cancelados) de los activos
+        active_appointments = []
         for app in appointments_today:
-            # Clasificar los turnos
             if app.status in ["COMPLETED", "NO_SHOW", "CANCELLED"]:
                 completed_appointments.append(app)
-            elif app.start_time <= now < app.end_time and not current_appointment:
+            else:
+                active_appointments.append(app)
+
+        # Clasificar los turnos activos cronológicamente
+        for app in active_appointments:
+            # Si el turno ya comenzó (o debió comenzar) y aún no tenemos un turno actual en curso, se asigna como actual
+            if app.start_time <= now and not current_appointment:
                 current_appointment = app
-                found_current = True
-            elif app.start_time > now:
-                if found_current and not next_appointment:
+            else:
+                # Si empieza en el futuro, o si ya tenemos un turno en curso, se asigna como siguiente o futuro
+                if not next_appointment:
                     next_appointment = app
                 else:
                     upcoming_appointments.append(app)
-
-        # Si no hay un turno "en curso", el próximo turno futuro es el "siguiente"
-        if not current_appointment and upcoming_appointments:
-            next_appointment = upcoming_appointments.pop(0)
 
         context["current_appointment"] = current_appointment
         context["next_appointment"] = next_appointment
@@ -1353,8 +1355,8 @@ def update_appointment_status(request, pk):
         valid_statuses = []
         
         if appointment.status == "PENDING":
-            # Desde PENDING: confirmar, cancelar o marcar como no presentado
-            valid_statuses = ["CONFIRMED", "CANCELLED", "NO_SHOW"]
+            # Desde PENDING: confirmar, cancelar, marcar como no presentado o completar directamente
+            valid_statuses = ["CONFIRMED", "CANCELLED", "NO_SHOW", "COMPLETED"]
         elif appointment.status == "CONFIRMED":
             # Desde CONFIRMED: marcar como completado, cancelar o no se presentó
             valid_statuses = ["COMPLETED", "CANCELLED", "NO_SHOW"]
