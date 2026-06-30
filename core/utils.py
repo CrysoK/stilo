@@ -227,6 +227,8 @@ def notify_user(user, event_type, context, subject, push_title=None, push_messag
         "APPOINTMENT_CANCELLED_CLIENT": "emails/appointment_cancelled_client.html",
         "APPOINTMENT_CANCELLED_OWNER": "emails/appointment_cancelled_owner.html",
         "APPOINTMENT_REMINDER": "emails/appointment_reminder.html",
+        "APPOINTMENT_RESCHEDULED_CLIENT": "emails/appointment_rescheduled_client.html",
+        "APPOINTMENT_EARLY_OFFER": "emails/appointment_early_offer_client.html",
     }
 
     template_name = template_map.get(event_type)
@@ -277,9 +279,25 @@ def notify_user(user, event_type, context, subject, push_title=None, push_messag
             elif event_type == "APPOINTMENT_REMINDER":
                 push_title = "Recordatorio de Turno"
                 push_message = f"Recuerda tu turno para {service_name} en {hairdresser_name} mañana el {time_str}.{pay_suffix}"
+            elif event_type == "APPOINTMENT_RESCHEDULED_CLIENT":
+                push_title = "Turno Reprogramado"
+                push_message = f"Tu turno para {service_name} en {hairdresser_name} ha sido reprogramado para las {timezone.localtime(appointment.start_time).strftime('%H:%M')} hs."
+            elif event_type == "APPOINTMENT_EARLY_OFFER":
+                push_title = "¡Adelantá tu turno!"
+                push_message = f"¿Querés adelantar tu turno para {service_name} a las {timezone.localtime(appointment.start_time).strftime('%H:%M')} hs? Tenés 2 minutos para responder."
 
     if push_title and push_message:
         send_push_notification(user, push_title, push_message)
+
+    # Actualizar last_notified_start_time si es necesario
+    if event_type in ["APPOINTMENT_SUCCESS_CLIENT", "APPOINTMENT_RESCHEDULED_CLIENT"]:
+        appointment = context.get("appointment")
+        if appointment and getattr(appointment, "pk", None) and hasattr(appointment, "last_notified_start_time"):
+            appointment.last_notified_start_time = appointment.start_time
+            from core.models import Appointment
+            Appointment.objects.filter(pk=appointment.pk).update(
+                last_notified_start_time=appointment.start_time
+            )
 
     return success
 
@@ -514,4 +532,81 @@ def refresh_mercadopago_token(hairdresser):
     hairdresser.save()
     mp_logger.info(f"[OAUTH] Token renovado exitosamente para peluquería ID: {hairdresser.pk}. Próxima expiración: {hairdresser.mercadopago_token_expires_at}")
     return data
+
+
+def reschedule_subsequent_appointments(appointment, delta_minutes):
+    """
+    Desplaza en cascada los turnos posteriores del mismo peluquero para el mismo día.
+    Retorna la lista de turnos que de acuerdo con el escalonamiento de notificaciones
+    deben ser notificados al cliente.
+    """
+    from datetime import timedelta
+    from django.utils import timezone
+    from core.models import Appointment
+
+    # Buscar turnos activos del día de la misma peluquería que empiecen después del actual
+    today = timezone.localtime(appointment.start_time).date()
+    subsequent = Appointment.objects.filter(
+        service__hairdresser=appointment.service.hairdresser,
+        start_time__date=today,
+        start_time__gt=appointment.start_time,
+    ).exclude(status__in=["COMPLETED", "NO_SHOW", "CANCELLED"]).order_by("start_time")
+
+    affected_to_notify = []
+    now = timezone.now()
+
+    for app in subsequent:
+        old_start = app.start_time
+        # Desplazar start_time
+        app.start_time = app.start_time + timedelta(minutes=delta_minutes)
+        app.save()  # Esto recalcula y guarda end_time automáticamente
+
+        # Lógica de notificaciones "escalonadas" para evitar spam:
+        # 1. Calcular minutos restantes para el NUEVO start_time
+        remaining_minutes = (app.start_time - now).total_seconds() / 60
+
+        should_notify = False
+        if not app.last_notified_start_time:
+            # Si nunca fue notificado, notificar si falta menos de 2 horas (120m)
+            if remaining_minutes <= 120:
+                should_notify = True
+        else:
+            last_remaining = (app.last_notified_start_time - now).total_seconds() / 60
+            
+            if remaining_minutes <= 30:
+                # Menos de 30 minutos: cualquier cambio se notifica
+                if app.start_time != app.last_notified_start_time:
+                    should_notify = True
+            elif remaining_minutes <= 60 and last_remaining > 60:
+                # Cruzó el escalón de 1 hora hacia abajo
+                should_notify = True
+            elif remaining_minutes <= 120 and last_remaining > 120:
+                # Cruzó el escalón de 2 horas hacia abajo
+                should_notify = True
+            elif remaining_minutes > 60 and last_remaining <= 60:
+                # Cruzó el escalón de 1 hora hacia arriba (retrasado)
+                should_notify = True
+            elif remaining_minutes > 120 and last_remaining <= 120:
+                # Cruzó el escalón de 2 horas hacia arriba (retrasado)
+                should_notify = True
+
+        if should_notify:
+            affected_to_notify.append(app)
+
+    return affected_to_notify
+
+
+def notify_rescheduled_appointments(appointments):
+    """
+    Envía notificaciones push y email a cada uno de los clientes de los turnos reprogramados.
+    """
+    for app in appointments:
+        if app.client:
+            notify_user(
+                user=app.client,
+                event_type="APPOINTMENT_RESCHEDULED_CLIENT",
+                context={"appointment": app},
+                subject="Horario de tu Turno Reprogramado - Stilo",
+            )
+
 

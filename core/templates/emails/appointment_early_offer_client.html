@@ -1,0 +1,35 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+<h2>¿Querés adelantar tu turno?</h2>
+<p>Hola, {{ appointment.client.first_name }}:</p>
+<p>El peluquero terminó antes de lo previsto su servicio anterior y el salón tiene disponibilidad inmediata. Te ofrecemos la opción de adelantar tu turno de hoy:</p>
+
+<div class="detail-card">
+    <div class="detail-row">
+        <span class="detail-label">Peluquería:</span>
+        <span class="detail-value">{{ appointment.service.hairdresser.name }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Servicio:</span>
+        <span class="detail-value">{{ appointment.service.name }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Horario Original:</span>
+        <span class="detail-value">{{ appointment.start_time|date:"H:i" }} hs</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">Nuevo Horario Propuesto:</span>
+        <span class="detail-value" style="font-weight: bold; color: #28a745;">{{ offer.new_start_time|date:"H:i" }} hs</span>
+    </div>
+</div>
+
+<p>Si querés aprovechar esta oportunidad para ser atendido antes, hacé clic en el siguiente botón para aceptar la propuesta. <strong>Tenés 2 minutos para confirmar antes de que venza la oferta.</strong></p>
+
+<div style="text-align: center;">
+    <a href="{{ accept_url }}" class="btn" style="background-color: #28a745; color: #ffffff !important; border-color: #28a745;">✓ Aceptar Adelanto</a>
+</div>
+
+<p>Si preferís mantener tu horario original o no podés asistir antes, simplemente ignorá este mensaje o dejá pasar el tiempo límite. Tu turno seguirá agendado para su horario original.</p>
+<p>¡Gracias por confiar en Stilo!</p>
+{% endblock %}

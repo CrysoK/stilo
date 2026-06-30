@@ -23,6 +23,8 @@ from .views import (
     busiest_days_chart_data,
     WorkstationView,
     update_appointment_status,
+    adjust_appointment_time,
+    accept_early_start,
     MyHairdresserInfoView,
     MyHairdresserHoursView,
     MyHairdresserServicesView,
@@ -61,6 +63,16 @@ urlpatterns = [
         "workstation/appointment/<int:pk>/update-status/",
         update_appointment_status,
         name="update_appointment_status",
+    ),
+    path(
+        "workstation/appointment/<int:pk>/adjust-time/",
+        adjust_appointment_time,
+        name="adjust_appointment_time",
+    ),
+    path(
+        "early-start/<str:token>/",
+        accept_early_start,
+        name="accept_early_start",
     ),
     path(
         "my-hairdresser/appointments/",

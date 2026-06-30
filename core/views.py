@@ -1534,11 +1534,161 @@ def update_appointment_status(request, pk):
                 response_msg = f"✓ Turno cancelado. El reembolso de ${appointment.amount_paid} falló y se reintentará automáticamente."
             else:
                 response_msg = "✓ Turno cancelado."
+        elif new_status == "COMPLETED":
+            # Verificar si se completó antes de tiempo y ofrecer al próximo
+            now = timezone.now()
+            if now < appointment.end_time:
+                minutes_early = int(round((appointment.end_time - now).total_seconds() / 60))
+                if minutes_early >= 5:
+                    # Buscar el próximo turno del día
+                    next_app = Appointment.objects.filter(
+                        service__hairdresser=appointment.service.hairdresser,
+                        start_time__date=now.date(),
+                        start_time__gt=now
+                    ).exclude(status__in=["COMPLETED", "NO_SHOW", "CANCELLED"]).order_by("start_time").first()
+
+                    if next_app:
+                        import uuid
+                        from datetime import timedelta
+                        from core.models import EarlyStartOffer
+                        from core.utils import notify_user
+                        
+                        token = str(uuid.uuid4())
+                        # La oferta propone adelantar el turno al momento actual (now)
+                        offer = EarlyStartOffer.objects.create(
+                            appointment=next_app,
+                            token=token,
+                            minutes_available=minutes_early,
+                            new_start_time=now,
+                            expires_at=now + timedelta(minutes=2)
+                        )
+                        accept_url = request.build_absolute_uri(
+                            reverse("accept_early_start", kwargs={"token": offer.token})
+                        )
+                        # Notificar al cliente
+                        notify_user(
+                            user=next_app.client,
+                            event_type="APPOINTMENT_EARLY_OFFER",
+                            context={"appointment": next_app, "offer": offer, "accept_url": accept_url},
+                            subject="¡Adelantá tu Turno! - Stilo"
+                        )
+                        response_msg = f"✓ Turno completado {minutes_early} min antes. Se ofreció adelantar el horario al próximo cliente."
+                    else:
+                        response_msg = f"✓ Turno completado {minutes_early} min antes."
+                else:
+                    response_msg = f"✓ Turno completado."
+            else:
+                response_msg = "✓ Turno completado."
         
         return JsonResponse({"status": "success", "message": response_msg})
 
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+@login_required
+@require_POST
+def adjust_appointment_time(request, pk):
+    if not request.user.is_owner:
+        return JsonResponse(
+            {"status": "error", "message": "Permission denied"}, status=403
+        )
+
+    try:
+        appointment = get_object_or_404(
+            Appointment, pk=pk, service__hairdresser=request.user.hairdresser_profile
+        )
+
+        delta = request.POST.get("delta")
+        if not delta:
+            return JsonResponse(
+                {"status": "error", "message": "Delta es requerido."}, status=400
+            )
+
+        try:
+            delta_mins = int(delta)
+        except ValueError:
+            return JsonResponse(
+                {"status": "error", "message": "Delta debe ser un entero."}, status=400
+            )
+
+        # No permitir reducir por debajo de la duración original del servicio
+        new_extra = appointment.extra_minutes + delta_mins
+        if appointment.service.duration_minutes + new_extra < 5:
+            return JsonResponse(
+                {"status": "error", "message": "La duración total del turno no puede ser menor a 5 minutos."},
+                status=400
+            )
+
+        # Actualizar extra_minutes
+        appointment.extra_minutes = new_extra
+        appointment.save()
+
+        # Reprogramar turnos posteriores en cascada
+        from core.utils import reschedule_subsequent_appointments, notify_rescheduled_appointments
+        affected_to_notify = reschedule_subsequent_appointments(appointment, delta_mins)
+        notify_rescheduled_appointments(affected_to_notify)
+
+        msg = f"Turno ajustado en {delta_mins:+} min. Se reprogramaron turnos posteriores."
+        return JsonResponse({"status": "success", "message": msg})
+
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+def accept_early_start(request, token):
+    from core.models import EarlyStartOffer, Appointment
+    from django.utils import timezone
+    from core.utils import reschedule_subsequent_appointments, notify_rescheduled_appointments
+
+    offer = get_object_or_404(EarlyStartOffer, token=token)
+
+    now = timezone.now()
+    if offer.expires_at < now and not offer.accepted:
+        # Expirada
+        return render(request, "early_start_result.html", {
+            "success": False,
+            "message": "La oferta de adelanto ha expirado (tenía un límite de 2 minutos)."
+        })
+
+    if offer.accepted:
+        return render(request, "early_start_result.html", {
+            "success": False,
+            "message": "Esta oferta ya fue aceptada previamente."
+        })
+
+    if offer.appointment.status in ["COMPLETED", "NO_SHOW", "CANCELLED"]:
+        return render(request, "early_start_result.html", {
+            "success": False,
+            "message": "El turno ya no está activo."
+        })
+
+    # Aceptar la oferta
+    offer.accepted = True
+    offer.save()
+
+    # Calcular la diferencia de minutos para reprogramar en cascada
+    # de forma negativa (el turno se adelanta!)
+    old_start = offer.appointment.start_time
+    new_start = offer.new_start_time
+
+    # El cambio en minutos (negativo porque se adelanta)
+    delta_mins = int((new_start - old_start).total_seconds() / 60)
+
+    # Actualizar el turno actual de la oferta
+    offer.appointment.start_time = new_start
+    offer.appointment.save()
+
+    # Reprogramar turnos posteriores en cascada (desplazamiento negativo)
+    affected_to_notify = reschedule_subsequent_appointments(offer.appointment, delta_mins)
+    notify_rescheduled_appointments(affected_to_notify)
+
+    return render(request, "early_start_result.html", {
+        "success": True,
+        "appointment": offer.appointment,
+        "message": f"¡Excelente! Tu turno ha sido adelantado para las {timezone.localtime(new_start).strftime('%H:%M')} hs."
+    })
+
 
 
 

@@ -78,6 +78,16 @@
                             {% endwith %}
                         </div>
                         {% endif %}
+                        <div class="mt-3 pt-3" style="border-top: 1px solid rgba(255, 255, 255, 0.2) !important;">
+                            <h6 class="text-white-50 small mb-2"><i class="bi bi-clock-history"></i> Retrasar / Adelantar turno:</h6>
+                            <div class="btn-group btn-group-sm" role="group" aria-label="Ajustar tiempo">
+                                <button class="btn btn-outline-light fw-semibold" onclick="handleTimeAdjustment({{ current_appointment.pk }}, 5)"><i class="bi bi-plus-circle"></i> +5m</button>
+                                <button class="btn btn-outline-light fw-semibold" onclick="handleTimeAdjustment({{ current_appointment.pk }}, 10)"><i class="bi bi-plus-circle"></i> +10m</button>
+                                <button class="btn btn-outline-light fw-semibold" onclick="handleTimeAdjustment({{ current_appointment.pk }}, 15)"><i class="bi bi-plus-circle"></i> +15m</button>
+                                <button class="btn btn-outline-light fw-semibold" onclick="handleTimeAdjustment({{ current_appointment.pk }}, -10)"><i class="bi bi-dash-circle"></i> -10m</button>
+                                <button class="btn btn-outline-light fw-semibold" onclick="handleTimeAdjustment({{ current_appointment.pk }}, -20)"><i class="bi bi-dash-circle"></i> -20m</button>
+                            </div>
+                        </div>
                     </div>
                     <div class="card-footer text-end">
                         <button class="btn btn-light" onclick="handleStatusUpdate({{ current_appointment.pk }}, 'COMPLETED')"><i class="bi bi-check-circle-fill"></i> Marcar como completado</button>
@@ -454,6 +464,43 @@ function handleStatusUpdate(appointmentId, newStatus) {
         if (footerOrActionsEl) {
             footerOrActionsEl.innerHTML = originalButtonsHtml;
         }
+    });
+}
+
+// Función para manejar el ajuste de tiempo
+function handleTimeAdjustment(appointmentId, delta) {
+    const card = document.querySelector(`[data-appointment-id="${appointmentId}"]`);
+    let originalButtonsHtml = '';
+    let footerOrActionsEl = null;
+
+    if (card) {
+        footerOrActionsEl = card.querySelector('.card-body');
+    }
+
+    const csrfToken = '{{ csrf_token }}';
+    const url = `{% url 'adjust_appointment_time' 0 %}`.replace('0', appointmentId);
+
+    const formData = new FormData();
+    formData.append('delta', delta);
+
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken
+        },
+        body: new URLSearchParams(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            updateWorkstationDOM(appointmentId, 'ADJUSTED');
+        } else {
+            alert(`Error: ${data.message}`);
+        }
+    })
+    .catch(error => {
+        console.error('Fetch error:', error);
+        alert('Ocurrió un error al intentar ajustar el tiempo del turno.');
     });
 }
 </script>

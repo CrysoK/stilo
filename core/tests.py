@@ -2846,3 +2846,267 @@ class HomeSearchFilterTestCase(TestCase):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]["name"], "Estilo & Color")
 
+
+class AppointmentTimeAdjustmentTestCase(TestCase):
+    def setUp(self):
+        from core.models import User, Hairdresser, Service, Appointment
+        from decimal import Decimal
+        import datetime
+        from django.utils import timezone
+
+        # Crear dueño
+        self.owner = User.objects.create_user(
+            username="owner_adj",
+            password="password123",
+            first_name="Owner",
+            last_name="Test",
+            email="owneradj@test.com",
+            is_owner=True,
+        )
+        # Peluquería
+        self.hairdresser = Hairdresser.objects.create(
+            owner=self.owner, name="Peluquería Test", address="Calle Falsa 123"
+        )
+        # Servicio
+        self.service = Service.objects.create(
+            hairdresser=self.hairdresser,
+            name="Corte",
+            price=Decimal("1500.00"),
+            duration_minutes=30,
+        )
+        # Cliente
+        self.client_user = User.objects.create_user(
+            username="client_adj",
+            password="password123",
+            first_name="Client",
+            last_name="Test",
+            email="clientadj@test.com",
+            is_owner=False,
+        )
+
+        # Login para el cliente HTTP
+        self.client = Client()
+        self.client.login(username="owner_adj", password="password123")
+
+    def test_extra_minutes_affects_end_time(self):
+        import datetime
+        from django.utils import timezone
+        from core.models import Appointment
+
+        now = timezone.now().replace(microsecond=0)
+        app = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now,
+            amount=self.service.price,
+            status="CONFIRMED",
+            extra_minutes=10,
+        )
+        # end_time should be start_time + 30m (service) + 10m (extra) = 40m
+        self.assertEqual(app.end_time, now + datetime.timedelta(minutes=40))
+
+        # Modifying extra_minutes and saving should update end_time
+        app.extra_minutes = -10
+        app.save()
+        self.assertEqual(app.end_time, now + datetime.timedelta(minutes=20))
+
+    def test_reschedule_cascade_and_escalated_notifications(self):
+        import datetime
+        from django.utils import timezone
+        from core.models import Appointment
+        from core.utils import reschedule_subsequent_appointments
+
+        now = timezone.now().replace(microsecond=0)
+        # Turno 1: empieza en now, dura 30m (original)
+        app1 = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now,
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Turno 2: empieza en 130m del futuro (más de 2 horas)
+        app2 = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now + datetime.timedelta(minutes=130),
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Turno 3: empieza en now + 45 min (entre 30 y 60 min)
+        app3 = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now + datetime.timedelta(minutes=45),
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Turno 4: empieza en now + 115 min (menos de 2 horas)
+        app4 = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now + datetime.timedelta(minutes=115),
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Desplazamos Turno 1 en +10 min
+        # Esto debería reprogramar:
+        # - Turno 2: 130 -> 140 min (> 120 min, no cruza, no se notifica)
+        # - Turno 3: 45 -> 55 min (30-60 min, no cruza, no se notifica)
+        # - Turno 4: 115 -> 125 min (cruza el umbral de 120m hacia arriba, SE NOTIFICA)
+        affected = reschedule_subsequent_appointments(app1, 10)
+
+        app2.refresh_from_db()
+        app3.refresh_from_db()
+        app4.refresh_from_db()
+
+        self.assertEqual(app2.start_time, now + datetime.timedelta(minutes=140))
+        self.assertEqual(app3.start_time, now + datetime.timedelta(minutes=55))
+        self.assertEqual(app4.start_time, now + datetime.timedelta(minutes=125))
+
+        self.assertIn(app4, affected)
+        self.assertNotIn(app2, affected)
+        self.assertNotIn(app3, affected)
+
+    @patch("core.utils.send_push_notification")
+    @patch("core.utils.send_html_email")
+    def test_adjust_appointment_time_endpoint(self, mock_email, mock_push):
+        import datetime
+        from django.utils import timezone
+        from core.models import Appointment
+
+        mock_email.return_value = True
+
+        now = timezone.now().replace(microsecond=0)
+        app = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now,
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        url = reverse("adjust_appointment_time", args=[app.pk])
+        response = self.client.post(url, {"delta": "5"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "success")
+
+        app.refresh_from_db()
+        self.assertEqual(app.extra_minutes, 5)
+        self.assertEqual(app.end_time, now + datetime.timedelta(minutes=35))
+
+    @patch("core.utils.send_push_notification")
+    @patch("core.utils.send_html_email")
+    def test_early_finish_creates_offer(self, mock_email, mock_push):
+        import datetime
+        from django.utils import timezone
+        from core.models import Appointment, EarlyStartOffer
+
+        mock_email.return_value = True
+
+        now = timezone.now().replace(microsecond=0)
+        # Turno 1: en curso, finaliza en now + 20 min
+        app1 = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now - datetime.timedelta(minutes=10),
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Turno 2: en el futuro, hoy mismo
+        app2 = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now + datetime.timedelta(minutes=40),
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Completar Turno 1 ahora (20 min antes)
+        url = reverse("update_appointment_status", args=[app1.pk])
+        response = self.client.post(url, {"status": "COMPLETED"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("ofreció", response.json()["message"])
+
+        # Debería haberse creado un EarlyStartOffer para el Turno 2
+        offer = EarlyStartOffer.objects.filter(appointment=app2).first()
+        self.assertIsNotNone(offer)
+        self.assertFalse(offer.accepted)
+        self.assertEqual(offer.minutes_available, 20)
+
+    @patch("core.utils.send_push_notification")
+    @patch("core.utils.send_html_email")
+    def test_accept_early_start_offer(self, mock_email, mock_push):
+        import datetime
+        from django.utils import timezone
+        from core.models import Appointment, EarlyStartOffer
+
+        mock_email.return_value = True
+
+        now = timezone.now().replace(microsecond=0)
+        app = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now + datetime.timedelta(minutes=40),
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        offer = EarlyStartOffer.objects.create(
+            appointment=app,
+            token="test-token-123",
+            minutes_available=20,
+            new_start_time=now,
+            expires_at=now + datetime.timedelta(minutes=2)
+        )
+
+        url = reverse("accept_early_start", args=[offer.token])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "¡Excelente!")
+
+        app.refresh_from_db()
+        self.assertEqual(app.start_time, now)
+        offer.refresh_from_db()
+        self.assertTrue(offer.accepted)
+
+    def test_expired_early_start_offer(self):
+        import datetime
+        from django.utils import timezone
+        from core.models import Appointment, EarlyStartOffer
+
+        now = timezone.now().replace(microsecond=0)
+        app = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now + datetime.timedelta(minutes=40),
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Oferta expirada hace 1 min
+        offer = EarlyStartOffer.objects.create(
+            appointment=app,
+            token="test-token-expired",
+            minutes_available=20,
+            new_start_time=now,
+            expires_at=now - datetime.timedelta(minutes=1)
+        )
+
+        url = reverse("accept_early_start", args=[offer.token])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "ha expirado")
+
+        app.refresh_from_db()
+        # El horario original se debe mantener
+        self.assertEqual(app.start_time, now + datetime.timedelta(minutes=40))
+        offer.refresh_from_db()
+        self.assertFalse(offer.accepted)
+
+

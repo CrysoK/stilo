@@ -304,6 +304,17 @@ class Appointment(models.Model):
     )
     start_time = models.DateTimeField()
     end_time = models.DateTimeField(editable=False)  # Se autocalculará
+    extra_minutes = models.IntegerField(
+        default=0,
+        verbose_name="Minutos adicionales",
+        help_text="Minutos añadidos (+) o reducidos (-) al servicio original.",
+    )
+    last_notified_start_time = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Último horario notificado",
+        help_text="Registra el último horario de inicio que fue notificado al cliente para evitar spam de reprogramaciones.",
+    )
     amount = models.DecimalField(
         max_digits=8,
         decimal_places=2,
@@ -396,7 +407,7 @@ class Appointment(models.Model):
         from datetime import timedelta
 
         self.end_time = self.start_time + timedelta(
-            minutes=self.service.duration_minutes
+            minutes=self.service.duration_minutes + self.extra_minutes
         )
 
         is_new = self.pk is None
@@ -800,5 +811,33 @@ class PaymentTransaction(models.Model):
 
     def __str__(self):
         return f"Transacción #{self.id} - Turno #{self.appointment_id} - Pago: {self.payment_id} - Estado: {self.status}"
+
+
+class EarlyStartOffer(models.Model):
+    """Oferta para adelantar un turno cuando el anterior terminó antes de lo previsto."""
+
+    appointment = models.ForeignKey(
+        Appointment,
+        on_delete=models.CASCADE,
+        related_name="early_start_offers",
+        verbose_name="Turno",
+    )
+    token = models.CharField(max_length=64, unique=True)
+    minutes_available = models.PositiveIntegerField(
+        help_text="Minutos que se pueden adelantar"
+    )
+    new_start_time = models.DateTimeField(
+        help_text="El nuevo start_time propuesto"
+    )
+    expires_at = models.DateTimeField()
+    accepted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Oferta de adelanto"
+        verbose_name_plural = "Ofertas de adelanto"
+
+    def __str__(self):
+        return f"Oferta para Turno #{self.appointment_id} - {self.minutes_available} min"
 
 
