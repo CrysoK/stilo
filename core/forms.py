@@ -53,6 +53,27 @@ class ServiceForm(forms.ModelForm):
     price = forms.DecimalField(label="Precio", min_value=Decimal('0.00'))
     duration_minutes = forms.IntegerField(label="Duración (minutos)", min_value=1)
 
+    def __init__(self, *args, **kwargs):
+        self.hairdresser = kwargs.pop("hairdresser", None)
+        super().__init__(*args, **kwargs)
+        if not self.hairdresser and self.instance and hasattr(self.instance, "hairdresser") and self.instance.hairdresser:
+            self.hairdresser = self.instance.hairdresser
+
+    def clean_duration_minutes(self):
+        duration = self.cleaned_data.get("duration_minutes")
+        if duration:
+            slot_dur = 15
+            if self.hairdresser:
+                slot_dur = self.hairdresser.slot_duration
+            elif self.instance and hasattr(self.instance, "hairdresser") and self.instance.hairdresser:
+                slot_dur = self.instance.hairdresser.slot_duration
+                
+            if duration % slot_dur != 0:
+                raise forms.ValidationError(
+                    f"La duración del servicio debe ser un múltiplo de {slot_dur} minutos (ej. {slot_dur}, {slot_dur * 2}, {slot_dur * 3})."
+                )
+        return duration
+
     class Meta:
         model = Service
         fields = [
@@ -163,6 +184,7 @@ class AppointmentForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         hairdresser = kwargs.pop("hairdresser", None)
         super().__init__(*args, **kwargs)
+        self.hairdresser = hairdresser
 
         if hairdresser:
             self.fields["service"].queryset = Service.objects.filter(  # type: ignore
@@ -185,11 +207,24 @@ class AppointmentForm(forms.ModelForm):
         Valida que la fecha y hora del turno no sea en el pasado.
         """
         start_time = self.cleaned_data.get("start_time")
-        if start_time and start_time <= timezone.now():
-            raise forms.ValidationError(
-                "No puedes reservar un turno en el pasado. Por favor, elige una fecha y hora futura.",
-                code="past_date",
-            )
+        if start_time:
+            if start_time <= timezone.now():
+                raise forms.ValidationError(
+                    "No puedes reservar un turno en el pasado. Por favor, elige una fecha y hora futura.",
+                    code="past_date",
+                )
+            
+            slot_dur = 15
+            if self.hairdresser:
+                slot_dur = self.hairdresser.slot_duration
+            elif self.instance and self.instance.pk and self.instance.service:
+                slot_dur = self.instance.service.hairdresser.slot_duration
+
+            if start_time.minute % slot_dur != 0:
+                raise forms.ValidationError(
+                    f"El turno debe comenzar en un múltiplo de {slot_dur} minutos.",
+                    code="invalid_grid_time",
+                )
         return start_time
 
     def clean(self):
@@ -274,6 +309,7 @@ class HairdresserSetupForm(forms.ModelForm):
             "default_allow_on_site_payment",
             "latitude",
             "longitude",
+            "slot_duration",
         ]
         widgets = {
             "latitude": forms.HiddenInput(),
@@ -290,6 +326,7 @@ class HairdresserSetupForm(forms.ModelForm):
         default_allow_on_site_payment = cleaned_data.get(
             "default_allow_on_site_payment"
         )
+        slot_duration = cleaned_data.get("slot_duration")
 
         if not default_allow_prepayment and not default_allow_on_site_payment:
             self.add_error(
@@ -319,6 +356,18 @@ class HairdresserSetupForm(forms.ModelForm):
                         "default_deposit_value",
                         "El porcentaje de la seña no puede superar el 100%.",
                     )
+
+        if slot_duration and self.instance and self.instance.pk:
+            incompatible_services = self.instance.services.all()
+            incompatibles = [
+                s.name for s in incompatible_services if s.duration_minutes % slot_duration != 0
+            ]
+            if incompatibles:
+                services_str = ", ".join(incompatibles)
+                self.add_error(
+                    "slot_duration",
+                    f"No puedes cambiar la duración del slot a {slot_duration} minutos porque tienes servicios con duraciones incompatibles: {services_str}. Por favor, edita tus servicios primero."
+                )
 
         return cleaned_data
 

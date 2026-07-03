@@ -61,6 +61,16 @@
       aspect-ratio: 4 / 3;
     }
   }
+  .recommended-event {
+    background-color: rgba(25, 135, 84, 0.15) !important;
+    border: 2px dashed #198754 !important;
+    opacity: 0.9;
+    transition: all 0.2s ease-in-out;
+  }
+  .recommended-event:hover {
+    background-color: rgba(25, 135, 84, 0.25) !important;
+    border-color: #146c43 !important;
+  }
 </style>
 {% endblock %}
 
@@ -218,6 +228,37 @@
   </div>
 </div>
 
+<!-- Modal Interceptor (Friendly Nudge) -->
+<div class="modal fade" id="nudgeModal" tabindex="-1" aria-labelledby="nudgeModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-success text-white border-0 py-3">
+        <h5 class="modal-title fw-bold d-flex align-items-center gap-2" id="nudgeModalLabel">
+          <i class="bi bi-clock-history"></i> ¿Te gustaría optimizar tu horario?
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center py-4 px-4">
+        <p class="fs-5 mb-4 text-secondary" id="nudgeMessage">
+          Para ayudarnos a organizar mejor nuestra agenda, ¿te gustaría adaptar tu cita 15 minutos?
+        </p>
+        <div class="card bg-success-subtle border-success text-success-emphasis p-3 mb-3 rounded-3">
+          <div class="small text-uppercase tracking-wider fw-bold mb-1 opacity-75">Nuevo horario sugerido</div>
+          <div class="fs-4 fw-bold" id="nudgeProposedTime">10:00 hs</div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0 pb-4 px-4 d-flex flex-column gap-2">
+        <button type="button" class="btn btn-success w-100 py-2.5 fw-bold shadow-sm" id="nudgeAcceptBtn">
+          Sí, cambiar al horario recomendado
+        </button>
+        <button type="button" class="btn btn-outline-secondary w-100 py-2" id="nudgeRejectBtn">
+          No, mantener mi horario original (<span id="nudgeOriginalTime">10:15 hs</span>)
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% include 'appointment_modal.html' %}
 
 {% endblock %}
@@ -280,6 +321,7 @@
     const calendarEl = document.getElementById('calendar');
     if (!calendarEl) return;
     
+    const slotDurationMinutes = {{ hairdresser.slot_duration }};
     const appointmentModalEl = document.getElementById('appointmentModal');
     const appointmentModal = new bootstrap.Modal(appointmentModalEl);
     let selectedService = null;
@@ -426,11 +468,131 @@
             allowPrepayment: serviceItem.dataset.allowPrepayment,
             allowOnSitePayment: serviceItem.dataset.allowOnSitePayment,
         };
+        updateRecommendedSlots();
       });
     }
 
     const isMobileInit = window.innerWidth < 768;
     let wasMobile = isMobileInit;
+
+    let recommendedEvents = [];
+
+    function updateRecommendedSlots() {
+      // 1. Remove previous recommended events
+      recommendedEvents.forEach(e => {
+        const ev = calendar.getEventById(e.id);
+        if (ev) ev.remove();
+      });
+      recommendedEvents = [];
+
+      if (!selectedService) return;
+
+      const durationMs = selectedService.duration * 60000;
+      const allEvents = calendar.getEvents();
+      
+      const workingHours = allEvents.filter(e => e.groupId === 'working_hours');
+      const reserved = allEvents.filter(e => e.display !== 'background' && e.groupId !== 'working_hours');
+
+      const viewStart = calendar.view.activeStart;
+      const viewEnd = calendar.view.activeEnd;
+
+      let currentDay = new Date(viewStart);
+      while (currentDay < viewEnd) {
+        const dayOfWeek = currentDay.getDay();
+        const dateStr = currentDay.toLocaleDateString('sv').slice(0, 10);
+
+        const whsForDay = workingHours.filter(wh => {
+          if (wh.daysOfWeek) {
+            return wh.daysOfWeek.includes(dayOfWeek);
+          }
+          return false;
+        });
+
+        const reservedForDay = reserved.filter(res => {
+          const resStart = res.start;
+          if (!resStart) return false;
+          const resDateStr = resStart.toLocaleDateString('sv').slice(0, 10);
+          return resDateStr === dateStr;
+        });
+
+        reservedForDay.sort((a, b) => a.start - b.start);
+
+        whsForDay.forEach(wh => {
+          const startTimeStr = wh.extendedProps.startTime || wh.start.toTimeString().slice(0, 5);
+          const endTimeStr = wh.extendedProps.endTime || wh.end.toTimeString().slice(0, 5);
+          
+          const [startH, startM] = startTimeStr.split(':');
+          const [endH, endM] = endTimeStr.split(':');
+
+          const whStart = new Date(currentDay);
+          whStart.setHours(parseInt(startH), parseInt(startM), 0, 0);
+
+          const whEnd = new Date(currentDay);
+          whEnd.setHours(parseInt(endH), parseInt(endM), 0, 0);
+
+          let segments = [];
+          let lastEnd = new Date(whStart);
+
+          reservedForDay.forEach(res => {
+            const resStart = new Date(res.start);
+            const resEnd = new Date(res.end);
+
+            if (resStart >= lastEnd && resStart < whEnd) {
+              if (resStart > lastEnd) {
+                segments.push({ start: new Date(lastEnd), end: new Date(resStart) });
+              }
+              lastEnd = resEnd > whEnd ? new Date(whEnd) : new Date(resEnd);
+            } else if (resStart < lastEnd && resEnd > lastEnd) {
+              lastEnd = resEnd > whEnd ? new Date(whEnd) : new Date(resEnd);
+            }
+          });
+
+          if (lastEnd < whEnd) {
+            segments.push({ start: new Date(lastEnd), end: new Date(whEnd) });
+          }
+
+          segments.forEach(seg => {
+            const segDurationMs = seg.end - seg.start;
+            if (segDurationMs >= durationMs) {
+              const rec1Start = new Date(seg.start);
+              const rec1End = new Date(rec1Start.getTime() + durationMs);
+
+              const rec2Start = new Date(seg.end.getTime() - durationMs);
+              const rec2End = new Date(seg.end);
+
+              const slotsToAdd = [];
+              if (rec1Start.getMinutes() % slotDurationMinutes === 0) {
+                slotsToAdd.push({ start: rec1Start, end: rec1End });
+              }
+              if (rec2Start.getMinutes() % slotDurationMinutes === 0 && rec2Start.getTime() !== rec1Start.getTime()) {
+                slotsToAdd.push({ start: rec2Start, end: rec2End });
+              }
+
+              slotsToAdd.forEach((slot, index) => {
+                const id = `rec_${dateStr}_${slot.start.getTime()}_${index}`;
+                if (calendar.getEventById(id)) return;
+                
+                const recEvent = {
+                  id: id,
+                  title: 'Recomendado',
+                  start: slot.start,
+                  end: slot.end,
+                  display: 'background',
+                  classNames: ['recommended-event'],
+                  extendedProps: {
+                    isRecommended: true
+                  }
+                };
+                calendar.addEvent(recEvent);
+                recommendedEvents.push(recEvent);
+              });
+            }
+          });
+        });
+
+        currentDay.setDate(currentDay.getDate() + 1);
+      }
+    }
 
     let calendar = new FullCalendar.Calendar(calendarEl, {
       locale: 'es',
@@ -469,10 +631,30 @@
       expandRows: true,
       slotMinTime: "{{ slot_min_time }}",
       slotMaxTime: "{{ slot_max_time }}",
+      slotDuration: '00:' + String(slotDurationMinutes).padStart(2, '0') + ':00',
       allDaySlot: false,
       nowIndicator: true,
       events: "{% url 'appointment_events' hairdresser.pk %}",
       
+      datesSet: function(info) {
+        updateRecommendedSlots();
+      },
+
+      loading: function(isLoading) {
+        if (!isLoading) {
+          updateRecommendedSlots();
+        }
+      },
+
+      eventContent: function(arg) {
+        if (arg.event.extendedProps.isRecommended) {
+          return {
+            html: '<div class="fc-event-title-container d-flex align-items-center justify-content-center h-100 w-100" style="pointer-events: none;"><span class="badge bg-success text-white border border-success fw-semibold" style="font-size: 0.72rem; padding: 0.2em 0.4em;">Recomendado</span></div>'
+          };
+        }
+        return null;
+      },
+
       eventClick: function(info) {
         if (info.event.display !== 'background') {
           showPopover(info.el, "Este horario ya está reservado.", info.jsEvent);
@@ -493,6 +675,11 @@
           return;
         }
 
+        if (clickedTime.getMinutes() % slotDurationMinutes !== 0) {
+          showPopover(null, "Los turnos deben comenzar en múltiplos de " + slotDurationMinutes + " minutos.", info.jsEvent);
+          return;
+        }
+
         const workingHoursEvents = calendar.getEvents().filter(e => e.groupId === 'working_hours');
         let containingWorkingHour = null;
 
@@ -509,7 +696,6 @@
         }
         
         if (containingWorkingHour) {
-          // Frontend validation for end time
           const proposedEndTime = new Date(clickedTime.getTime() + selectedService.duration * 60000);
           const [endHours, endMinutes] = (containingWorkingHour.extendedProps.endTime || containingWorkingHour.end.toTimeString().slice(0,5)).split(':');
           const workDayEndTime = new Date(clickedTime);
@@ -520,10 +706,8 @@
               return;
           }
 
-          // Check if it overlaps with any reserved appointments
           const reservedEvents = calendar.getEvents().filter(e => e.display !== 'background' && e.groupId !== 'working_hours');
           
-          // Check if the clicked start time itself falls inside a reserved event
           let clickedOnReserved = false;
           for (const event of reservedEvents) {
             const eventStart = event.start;
@@ -540,7 +724,6 @@
             return;
           }
 
-          // Check if the proposed appointment duration overlaps with any reserved event
           let overlaps = false;
           for (const event of reservedEvents) {
             const eventStart = event.start;
@@ -558,22 +741,123 @@
             return;
           }
 
-          document.getElementById("modalServiceName").innerText = selectedService.name;
-          document.getElementById("modalServiceDuration").innerText = selectedService.duration;
-          document.getElementById("modalServicePrice").innerText = selectedService.price;
-          document.getElementById("modalDateTime").innerText = clickedTime.toLocaleString("es-ES", { dateStyle: "long", timeStyle: "short" });
+          // Smart Scheduling: Interceptor
+          const dayOfWeek = clickedTime.getDay();
+          const dateStr = clickedTime.toLocaleDateString('sv').slice(0, 10);
+          const reservedForDay = reservedEvents.filter(res => {
+            return res.start && res.start.toLocaleDateString('sv').slice(0, 10) === dateStr;
+          });
+          reservedForDay.sort((a, b) => a.start - b.start);
 
-          const isoDateTime = new Date(clickedTime.getTime() - (clickedTime.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-          document.querySelector('#appointmentForm [name="service"]').value = selectedService.id;
-          document.querySelector('#appointmentForm [name="start_time"]').value = isoDateTime;
+          const startTimeStr = containingWorkingHour.extendedProps.startTime || containingWorkingHour.start.toTimeString().slice(0, 5);
+          const endTimeStr = containingWorkingHour.extendedProps.endTime || containingWorkingHour.end.toTimeString().slice(0, 5);
+          const [startH, startM] = startTimeStr.split(':');
+          const [endH, endM] = endTimeStr.split(':');
 
-          populatePaymentOptions(selectedService);
-          appointmentModal.show();
+          const whStart = new Date(clickedTime);
+          whStart.setHours(parseInt(startH), parseInt(startM), 0, 0);
+
+          const whEnd = new Date(clickedTime);
+          whEnd.setHours(parseInt(endH), parseInt(endM), 0, 0);
+
+          let segments = [];
+          let lastEnd = new Date(whStart);
+
+          reservedForDay.forEach(res => {
+            const resStart = new Date(res.start);
+            const resEnd = new Date(res.end);
+
+            if (resStart >= lastEnd && resStart < whEnd) {
+              if (resStart > lastEnd) {
+                segments.push({ start: new Date(lastEnd), end: new Date(resStart) });
+              }
+              lastEnd = resEnd > whEnd ? new Date(whEnd) : new Date(resEnd);
+            } else if (resStart < lastEnd && resEnd > lastEnd) {
+              lastEnd = resEnd > whEnd ? new Date(whEnd) : new Date(resEnd);
+            }
+          });
+
+          if (lastEnd < whEnd) {
+            segments.push({ start: new Date(lastEnd), end: new Date(whEnd) });
+          }
+
+          let containingSegment = null;
+          for (let seg of segments) {
+            if (clickedTime >= seg.start && clickedTime < seg.end) {
+              containingSegment = seg;
+              break;
+            }
+          }
+
+          if (containingSegment) {
+            const gapBefore = clickedTime.getTime() - containingSegment.start.getTime();
+            const gapAfter = containingSegment.end.getTime() - proposedEndTime.getTime();
+            const slotDurationMs = slotDurationMinutes * 60 * 1000;
+
+            let suggestedTime = null;
+            let nudgeMsg = "";
+
+            if (gapBefore === slotDurationMs) {
+              suggestedTime = new Date(clickedTime.getTime() - slotDurationMs);
+              nudgeMsg = "Para ayudarnos a organizar mejor nuestra agenda, ¿te gustaría adelantar tu cita " + slotDurationMinutes + " minutos para pegarla al turno anterior?";
+            } else if (gapAfter === slotDurationMs) {
+              suggestedTime = new Date(clickedTime.getTime() + slotDurationMs);
+              nudgeMsg = "Para ayudarnos a organizar mejor nuestra agenda, ¿te gustaría retrasar tu cita " + slotDurationMinutes + " minutos para pegarla al turno siguiente?";
+            }
+
+            if (suggestedTime) {
+              const nudgeModalEl = document.getElementById('nudgeModal');
+              const nudgeModal = new bootstrap.Modal(nudgeModalEl);
+
+              document.getElementById("nudgeMessage").innerText = nudgeMsg;
+              document.getElementById("nudgeProposedTime").innerText = suggestedTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) + " hs";
+              document.getElementById("nudgeOriginalTime").innerText = clickedTime.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) + " hs";
+
+              const acceptBtn = document.getElementById("nudgeAcceptBtn");
+              const rejectBtn = document.getElementById("nudgeRejectBtn");
+              
+              const newAcceptBtn = acceptBtn.cloneNode(true);
+              acceptBtn.parentNode.replaceChild(newAcceptBtn, acceptBtn);
+              
+              const newRejectBtn = rejectBtn.cloneNode(true);
+              rejectBtn.parentNode.replaceChild(newRejectBtn, rejectBtn);
+
+              document.getElementById("nudgeAcceptBtn").addEventListener("click", function() {
+                nudgeModal.hide();
+                openConfirmationModal(suggestedTime);
+              });
+
+              document.getElementById("nudgeRejectBtn").addEventListener("click", function() {
+                nudgeModal.hide();
+                openConfirmationModal(clickedTime);
+              });
+
+              nudgeModal.show();
+              return;
+            }
+          }
+
+          openConfirmationModal(clickedTime);
         } else {
           showPopover(null, "La peluquería no atiende en este horario.", info.jsEvent);
         }
       }
     });
+
+    function openConfirmationModal(time) {
+      document.getElementById("modalServiceName").innerText = selectedService.name;
+      document.getElementById("modalServiceDuration").innerText = selectedService.duration;
+      document.getElementById("modalServicePrice").innerText = selectedService.price;
+      document.getElementById("modalDateTime").innerText = time.toLocaleString("es-ES", { dateStyle: "long", timeStyle: "short" });
+
+      const isoDateTime = new Date(time.getTime() - (time.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+      document.querySelector('#appointmentForm [name="service"]').value = selectedService.id;
+      document.querySelector('#appointmentForm [name="start_time"]').value = isoDateTime;
+
+      populatePaymentOptions(selectedService);
+      appointmentModal.show();
+    }
+
     calendar.render();
 
     const confirmBtn = document.getElementById('confirmAppointmentBtn');

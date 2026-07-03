@@ -92,6 +92,18 @@ class Hairdresser(models.Model):
         default=True,
         verbose_name="Permitir pago en el local por defecto",
     )
+    slot_duration = models.PositiveIntegerField(
+        default=15,
+        choices=[
+            (10, "10 minutos"),
+            (15, "15 minutos"),
+            (20, "20 minutos"),
+            (30, "30 minutos"),
+            (60, "60 minutos"),
+        ],
+        verbose_name="Duración del slot (agenda)",
+        help_text="Define la grilla de tiempo del calendario y los múltiplos para duraciones de servicios y turnos."
+    )
 
     def clean(self):
         super().clean()
@@ -212,6 +224,18 @@ class Service(models.Model):
                     {
                         "deposit_value": "El porcentaje de la seña no puede superar el 100%."
                     }
+                )
+        
+        if self.duration_minutes is not None:
+            slot_dur = 15
+            try:
+                if self.hairdresser:
+                    slot_dur = self.hairdresser.slot_duration
+            except Exception:
+                pass
+            if self.duration_minutes % slot_dur != 0:
+                raise ValidationError(
+                    {"duration_minutes": f"La duración del servicio debe ser un múltiplo de {slot_dur} minutos (ej. {slot_dur}, {slot_dur * 2}, {slot_dur * 3})."}
                 )
 
     def get_required_deposit_amount(self):

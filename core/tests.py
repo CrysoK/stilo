@@ -745,6 +745,7 @@ class MercadoPagoIntegrationTestCase(TestCase):
             "default_allow_on_site_payment": True,
             "latitude": -34.60,
             "longitude": -58.38,
+            "slot_duration": 15,
         }
         form = HairdresserSetupForm(data=form_data)
         self.assertFalse(form.is_valid())
@@ -1451,7 +1452,7 @@ class CancelExpiredAppointmentsTestCase(TestCase):
             hairdresser=self.hairdresser,
             name="Corte Express",
             price=Decimal("500.00"),
-            duration_minutes=20,
+            duration_minutes=30,
         )
 
     def test_endpoint_unauthorized(self):
@@ -2811,7 +2812,7 @@ class ServiceViewsTestCase(TestCase):
             hairdresser=self.hairdresser,
             name="Corte viejo",
             price=1000.00,
-            duration_minutes=25,
+            duration_minutes=30,
         )
         self.client.login(username="owner_service_test", password="password123")
         response = self.client.post(
@@ -2819,7 +2820,7 @@ class ServiceViewsTestCase(TestCase):
             {
                 "name": "Corte nuevo",
                 "price": "1500.00",
-                "duration_minutes": 35,
+                "duration_minutes": 45,
                 "override_deposit": "False",
                 "deposit_type": "FIXED",
                 "deposit_value": "0.00",
@@ -2835,7 +2836,7 @@ class ServiceViewsTestCase(TestCase):
         service.refresh_from_db()
         self.assertEqual(service.name, "Corte nuevo")
         self.assertEqual(service.price, 1500.00)
-        self.assertEqual(service.duration_minutes, 35)
+        self.assertEqual(service.duration_minutes, 45)
 
     def test_service_create_unauthorized(self):
         # Intentar crear servicio sin loguearse
@@ -3778,6 +3779,259 @@ class OwnerAppointmentSearchTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         appointments = response.context["appointments"]
         self.assertEqual(len(appointments), 0)
+
+
+class SmartSchedulingTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        from core.models import Hairdresser, Service
+        User = get_user_model()
+        self.owner = User.objects.create_user(
+            username="owner_smart",
+            email="owner_smart@test.com",
+            password="password123",
+            is_owner=True,
+        )
+        self.hairdresser = Hairdresser.objects.create(
+            owner=self.owner,
+            name="Smart Salon",
+        )
+
+    def test_service_duration_validation_model(self):
+        from django.core.exceptions import ValidationError
+        from core.models import Service
+        # Válido: múltiplo de 15
+        service_valid = Service(
+            hairdresser=self.hairdresser,
+            name="Corte 30",
+            price=100.00,
+            duration_minutes=30,
+        )
+        service_valid.full_clean()  # No debería lanzar ValidationError
+        
+        # Inválido: no es múltiplo de 15
+        service_invalid = Service(
+            hairdresser=self.hairdresser,
+            name="Corte 25",
+            price=100.00,
+            duration_minutes=25,
+        )
+        with self.assertRaises(ValidationError):
+            service_invalid.full_clean()
+
+    def test_service_form_duration_validation(self):
+        from core.forms import ServiceForm
+        # Inválido
+        form_invalid = ServiceForm(data={
+            "name": "Corte 25",
+            "price": "100.00",
+            "duration_minutes": 25,
+            "override_deposit": "False",
+            "deposit_type": "FIXED",
+            "deposit_value": "0.00",
+            "override_payment_modes": "False",
+            "allow_prepayment": "True",
+            "allow_on_site_payment": "True",
+        })
+        self.assertFalse(form_invalid.is_valid())
+        self.assertIn("duration_minutes", form_invalid.errors)
+
+        # Válido
+        form_valid = ServiceForm(data={
+            "name": "Corte 30",
+            "price": "100.00",
+            "duration_minutes": 30,
+            "override_deposit": "False",
+            "deposit_type": "FIXED",
+            "deposit_value": "0.00",
+            "override_payment_modes": "False",
+            "allow_prepayment": "True",
+            "allow_on_site_payment": "True",
+        })
+        self.assertTrue(form_valid.is_valid())
+
+    def test_appointment_start_time_grid_validation(self):
+        from core.forms import AppointmentForm
+        from core.models import Service, WorkingHours
+        from django.utils import timezone
+        import datetime
+
+        service = Service.objects.create(
+            hairdresser=self.hairdresser,
+            name="Corte 30",
+            price=100.00,
+            duration_minutes=30,
+        )
+        
+        # Horario de atención: lunes todo el día
+        WorkingHours.objects.create(
+            hairdresser=self.hairdresser,
+            day_of_week=0,  # Lunes
+            start_time=datetime.time(8, 0),
+            end_time=datetime.time(20, 0),
+        )
+
+        # Lunes en el futuro: 2026-07-06 (2026-07-03 es viernes, así que el próximo lunes es 06)
+        # Hora inválida: 10:07
+        invalid_time = timezone.make_aware(
+            datetime.datetime(2026, 7, 6, 10, 7),
+            timezone.get_current_timezone()
+        )
+        form_invalid = AppointmentForm(
+            data={
+                "service": service.pk,
+                "start_time": invalid_time.isoformat(),
+                "payment_method": "CASH",
+            },
+            hairdresser=self.hairdresser,
+        )
+        self.assertFalse(form_invalid.is_valid())
+        self.assertIn("start_time", form_invalid.errors)
+
+        # Hora válida: 10:15
+        valid_time = timezone.make_aware(
+            datetime.datetime(2026, 7, 6, 10, 15),
+            timezone.get_current_timezone()
+        )
+        form_valid = AppointmentForm(
+            data={
+                "service": service.pk,
+                "start_time": valid_time.isoformat(),
+                "payment_method": "CASH",
+            },
+            hairdresser=self.hairdresser,
+        )
+        self.assertTrue(form_valid.is_valid())
+
+
+class DynamicSlotDurationTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        from core.models import Hairdresser, Service
+        User = get_user_model()
+        self.owner = User.objects.create_user(
+            username="owner_dynamic",
+            email="owner_dynamic@test.com",
+            password="password123",
+            is_owner=True,
+        )
+        self.hairdresser = Hairdresser.objects.create(
+            owner=self.owner,
+            name="Dynamic Salon",
+            slot_duration=30,
+        )
+
+    def test_service_duration_validation_with_custom_slot_duration(self):
+        from django.core.exceptions import ValidationError
+        from core.models import Service
+        
+        # Con slot_duration=30, 30 minutos es válido
+        service_valid = Service(
+            hairdresser=self.hairdresser,
+            name="Corte 30",
+            price=100.00,
+            duration_minutes=30,
+        )
+        service_valid.full_clean()
+        
+        # Con slot_duration=30, 15 minutos NO es válido
+        service_invalid = Service(
+            hairdresser=self.hairdresser,
+            name="Corte 15",
+            price=100.00,
+            duration_minutes=15,
+        )
+        with self.assertRaises(ValidationError):
+            service_invalid.full_clean()
+
+    def test_hairdresser_setup_form_incompatible_slot_duration(self):
+        from core.forms import HairdresserSetupForm
+        from core.models import Service
+        
+        # Creamos un servicio de 15 minutos en una peluquería que actualmente tiene slot de 15
+        self.hairdresser.slot_duration = 15
+        self.hairdresser.save()
+        Service.objects.create(
+            hairdresser=self.hairdresser,
+            name="Corte Corto",
+            price=50.00,
+            duration_minutes=15,
+        )
+        
+        # Intentamos cambiar slot_duration a 30. Debería dar un error en el form.
+        form = HairdresserSetupForm(
+            instance=self.hairdresser,
+            data={
+                "name": "Dynamic Salon Mod",
+                "address": "Dirección",
+                "phone_number": "123",
+                "description": "Desc",
+                "mercadopago_active": "False",
+                "requires_deposit": "False",
+                "default_deposit_type": "FIXED",
+                "default_deposit_value": "0.00",
+                "default_allow_prepayment": "True",
+                "default_allow_on_site_payment": "True",
+                "slot_duration": 30,
+            }
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("slot_duration", form.errors)
+        self.assertIn("incompatibles", form.errors["slot_duration"][0])
+
+    def test_appointment_start_time_validation_with_custom_slot_duration(self):
+        from core.forms import AppointmentForm
+        from core.models import Service, WorkingHours
+        from django.utils import timezone
+        import datetime
+
+        service = Service.objects.create(
+            hairdresser=self.hairdresser,
+            name="Corte 30",
+            price=100.00,
+            duration_minutes=30,
+        )
+        
+        # Horario de atención: lunes todo el día
+        WorkingHours.objects.create(
+            hairdresser=self.hairdresser,
+            day_of_week=0,  # Lunes
+            start_time=datetime.time(8, 0),
+            end_time=datetime.time(20, 0),
+        )
+
+        # Con slot_duration=30, 10:15 es inválido
+        invalid_time = timezone.make_aware(
+            datetime.datetime(2026, 7, 6, 10, 15),
+            timezone.get_current_timezone()
+        )
+        form_invalid = AppointmentForm(
+            data={
+                "service": service.pk,
+                "start_time": invalid_time.isoformat(),
+                "payment_method": "CASH",
+            },
+            hairdresser=self.hairdresser,
+        )
+        self.assertFalse(form_invalid.is_valid())
+        self.assertIn("start_time", form_invalid.errors)
+
+        # Con slot_duration=30, 10:30 es válido
+        valid_time = timezone.make_aware(
+            datetime.datetime(2026, 7, 6, 10, 30),
+            timezone.get_current_timezone()
+        )
+        form_valid = AppointmentForm(
+            data={
+                "service": service.pk,
+                "start_time": valid_time.isoformat(),
+                "payment_method": "CASH",
+            },
+            hairdresser=self.hairdresser,
+        )
+        self.assertTrue(form_valid.is_valid())
+
+
 
 
 

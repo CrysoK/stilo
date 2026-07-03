@@ -120,6 +120,11 @@ class ServiceCreateView(OwnerRequiredMixin, CreateView):
     form_class = ServiceForm
     success_url = reverse_lazy("my_hairdresser_services")
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["hairdresser"] = self.request.user.hairdresser_profile  # type: ignore
+        return kwargs
+
     def form_valid(self, form):
         form.instance.hairdresser = self.request.user.hairdresser_profile  # type: ignore
         self.object = form.save()
@@ -143,6 +148,11 @@ class ServiceUpdateView(OwnerRequiredMixin, UpdateView):
         return Service.objects.filter(
             hairdresser=self.request.user.hairdresser_profile  # type: ignore
         )
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["hairdresser"] = self.request.user.hairdresser_profile  # type: ignore
+        return kwargs
 
     def form_valid(self, form):
         self.object = form.save()
