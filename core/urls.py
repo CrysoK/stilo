@@ -22,6 +22,7 @@ from .views import (
     revenue_by_service_chart_data,
     busiest_days_chart_data,
     WorkstationView,
+    RegisterWalkInView,
     update_appointment_status,
     cancel_appointment_client,
     adjust_appointment_time,
@@ -60,6 +61,11 @@ urlpatterns = [
     # URLs del CRUD de Servicios
     path("stats/", OwnerStatsView.as_view(), name="owner_stats"),
     path("workstation/", WorkstationView.as_view(), name="workstation"),
+    path(
+        "workstation/register-walk-in/",
+        RegisterWalkInView.as_view(),
+        name="register_walk_in",
+    ),
     path(
         "workstation/appointment/<int:pk>/update-status/",
         update_appointment_status,

@@ -42,6 +42,7 @@ from .forms import (
     CustomPasswordChangeForm,
     ServiceForm,
     ReviewForm,
+    WalkInAppointmentForm,
 )
 from .models import (
     Appointment,
@@ -720,6 +721,7 @@ class OwnerAppointmentListView(OwnerRequiredMixin, ListView):
         context["status_choices"] = Appointment.STATUS_CHOICES
         # Contadores por estado para el resumen rápido
         hairdresser = self.request.user.hairdresser_profile  # type: ignore
+        context["hairdresser"] = hairdresser
         context["pending_count"] = Appointment.objects.filter(
             service__hairdresser=hairdresser, status="PENDING", expires_at__isnull=True
         ).count()
@@ -913,9 +915,10 @@ class OwnerStatsView(OwnerRequiredMixin, TemplateView):
             total_revenue / completed_count if completed_count > 0 else 0
         )
 
-        # Top 5 Clientes (basado en el mes seleccionado)
+        # Top 5 Clientes (basado en el mes seleccionado, excluyendo turnos presenciales)
         context["top_clients"] = (
-            completed_in_month.values("client__first_name", "client__last_name")
+            completed_in_month.filter(client__isnull=False)
+            .values("client__first_name", "client__last_name")
             .annotate(total_spent=Sum("amount"))
             .order_by("-total_spent")[:5]
         )
@@ -1344,6 +1347,31 @@ def get_service_detail(request, pk):
             "allow_on_site_payment": service.allow_on_site_payment,
         }
     )
+
+
+class RegisterWalkInView(OwnerRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        hairdresser = request.user.hairdresser_profile
+        form = WalkInAppointmentForm(request.POST, hairdresser=hairdresser)
+        if form.is_valid():
+            appointment = form.save(commit=False)
+            appointment.start_time = form.cleaned_data["start_time"]
+            appointment.status = "CONFIRMED"
+            appointment.payment_method = "CASH"
+            appointment.amount_paid = Decimal("0.00")
+            appointment.expires_at = None
+            appointment.client = None
+            appointment.save()
+            return JsonResponse({"status": "success", "message": "Turno presencial registrado exitosamente."})
+        else:
+            error_message = "Por favor, corrige los errores."
+            if "__all__" in form.errors:
+                error_message = form.errors["__all__"][0]
+            else:
+                for field in form.errors:
+                    error_message = f"{form.fields[field].label}: {form.errors[field][0]}"
+                    break
+            return JsonResponse({"status": "error", "message": error_message}, status=400)
 
 
 class WorkstationView(OwnerRequiredMixin, TemplateView):

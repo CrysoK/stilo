@@ -391,3 +391,91 @@ class CustomPasswordChangeForm(PasswordChangeForm):
         self.fields["old_password"].widget.attrs["autocomplete"] = "current-password"
         self.fields["new_password1"].widget.attrs["autocomplete"] = "new-password"
         self.fields["new_password2"].widget.attrs["autocomplete"] = "new-password"
+
+
+class WalkInAppointmentForm(forms.ModelForm):
+    client_name = forms.CharField(
+        label="Nombre del cliente",
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Juan Pérez"})
+    )
+    date = forms.DateField(
+        label="Fecha",
+        required=True,
+        widget=forms.DateInput(attrs={"type": "date", "class": "form-control"})
+    )
+    start_time_only = forms.TimeField(
+        label="Hora de inicio",
+        required=True,
+        widget=forms.TimeInput(attrs={"type": "time", "class": "form-control"})
+    )
+
+    class Meta:
+        model = Appointment
+        fields = ["service", "client_name"]
+
+    def __init__(self, *args, **kwargs):
+        hairdresser = kwargs.pop("hairdresser", None)
+        super().__init__(*args, **kwargs)
+        if hairdresser:
+            self.fields["service"].queryset = Service.objects.filter(hairdresser=hairdresser)
+            self.fields["service"].widget.attrs.update({"class": "form-select"})
+        else:
+            self.fields["service"].queryset = Service.objects.none()
+
+    def clean_service(self):
+        service = self.cleaned_data.get("service")
+        if not service:
+            raise ValidationError("Debe seleccionar un servicio.")
+        return service
+
+    def clean(self):
+        cleaned_data = super().clean()
+        service = cleaned_data.get("service")
+        date = cleaned_data.get("date")
+        start_time_only = cleaned_data.get("start_time_only")
+
+        if service and date and start_time_only:
+            from django.utils import timezone
+            from django.db.models import Q
+            import datetime
+
+            # Combinar fecha y hora
+            naive_datetime = datetime.datetime.combine(date, start_time_only)
+            start_time = timezone.make_aware(naive_datetime, timezone.get_current_timezone())
+            cleaned_data["start_time"] = start_time
+
+            # Validar que no sea anterior a hoy
+            today = timezone.localtime(timezone.now()).date()
+            if date < today:
+                self.add_error("date", "No puedes registrar un turno en un día anterior al de hoy.")
+
+            # Validar rango del turno
+            end_time = start_time + datetime.timedelta(minutes=service.duration_minutes)
+
+            # 1. Validar que el turno cabe dentro de un horario de trabajo
+            valid_slot_exists = WorkingHours.objects.filter(
+                hairdresser=service.hairdresser,
+                day_of_week=start_time.weekday(),
+                start_time__lte=start_time.time(),
+                end_time__gte=end_time.time(),
+            ).exists()
+
+            if not valid_slot_exists:
+                raise ValidationError("El servicio excede el horario de atención para el día seleccionado.")
+
+            # 2. Comprobar si hay turnos que se superponen
+            overlapping_appointments = Appointment.objects.filter(
+                service__hairdresser=service.hairdresser,
+                start_time__lt=end_time,
+                end_time__gt=start_time,
+            ).filter(
+                Q(status="CONFIRMED")
+                | Q(status="PENDING", expires_at__isnull=True)
+                | Q(status="PENDING", expires_at__gt=timezone.now())
+            )
+
+            if overlapping_appointments.exists():
+                raise ValidationError("El horario seleccionado ya no está disponible. Por favor, elija otro.")
+
+        return cleaned_data

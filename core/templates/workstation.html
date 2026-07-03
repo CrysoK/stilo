@@ -46,8 +46,13 @@
 
 {% block content %}
 <div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2 class="mb-0">Agenda del día - {{ hairdresser.name }}</h2>
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <h2 class="mb-0">Agenda del día - {{ hairdresser.name }}</h2>
+            <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#walkInModal">
+                <i class="bi bi-plus-circle"></i> Registrar Turno Presencial
+            </button>
+        </div>
         <span class="badge bg-primary fs-5" id="live-clock"></span>
     </div>
 
@@ -65,7 +70,12 @@
                         </span>
                     </div>
                     <div class="card-body">
-                        <h5 class="card-title">{{ current_appointment.client.first_name }} {{ current_appointment.client.last_name }}</h5>
+                        <h5 class="card-title">
+                            {{ current_appointment.display_client_name }}
+                            {% if not current_appointment.client %}
+                            <span class="badge bg-light text-dark small fs-6 ms-2"><i class="bi bi-shop"></i> Presencial</span>
+                            {% endif %}
+                        </h5>
                         <p class="card-text mb-1"><strong>Servicio:</strong> {{ current_appointment.service.name }}</p>
                         <p class="card-text mb-1"><strong>Horario:</strong> {{ current_appointment.start_time|time:"H:i" }} - {{ current_appointment.end_time|time:"H:i" }}</p>
                         {% if current_appointment.service.hairdresser.mercadopago_active %}
@@ -114,7 +124,12 @@
                         </span>
                     </div>
                     <div class="card-body">
-                        <h5 class="card-title">{{ next_appointment.client.first_name }} {{ next_appointment.client.last_name }}</h5>
+                        <h5 class="card-title">
+                            {{ next_appointment.display_client_name }}
+                            {% if not next_appointment.client %}
+                            <span class="badge bg-secondary text-light small fs-6 ms-2"><i class="bi bi-shop"></i> Presencial</span>
+                            {% endif %}
+                        </h5>
                         <p class="card-text mb-1"><strong>Servicio:</strong> {{ next_appointment.service.name }}</p>
                         <p class="card-text mb-1"><strong>Horario:</strong> {{ next_appointment.start_time|time:"H:i" }} - {{ next_appointment.end_time|time:"H:i" }}</p>
                         {% if next_appointment.service.hairdresser.mercadopago_active %}
@@ -146,7 +161,10 @@
                 {% for app in upcoming_appointments %}
                     <div class="list-group-item d-flex justify-content-between align-items-start gap-2" data-appointment-id="{{ app.pk }}">
                         <div class="flex-grow-1">
-                            <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.client.first_name }} {{ app.client.last_name }}
+                            <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.display_client_name }}
+                            {% if not app.client %}
+                            <span class="badge bg-secondary text-light small ms-1" style="font-size: 0.75rem;"><i class="bi bi-shop"></i> Presencial</span>
+                            {% endif %}
                             <small class="d-block text-muted">{{ app.service.name }}</small>
                             {% if app.status == 'PENDING' and not app.expires_at %}
                                 <span class="badge bg-warning text-dark mt-1"><i class="bi bi-hourglass-split"></i> Pendiente de confirmación</span>
@@ -183,7 +201,10 @@
                     <div class="list-group-item list-group-item-{{ app.status|lower|slice:'-1'|default:'secondary' }} {% if app.status == 'NO_SHOW' %}list-group-item-danger{% elif app.status == 'COMPLETED' %}list-group-item-success{% endif %}" data-appointment-id="{{ app.pk }}">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                               <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.client.first_name }} {{ app.client.last_name }}
+                               <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.display_client_name }}
+                               {% if not app.client %}
+                               <span class="badge bg-secondary text-light small ms-1" style="font-size: 0.75rem;"><i class="bi bi-shop"></i> Presencial</span>
+                               {% endif %}
                                <small class="d-block text-muted">{{ app.service.name }}</small>
                                {% if app.service.hairdresser.mercadopago_active %}
                                    {% with pay_info=app.get_payment_status_info %}
@@ -226,6 +247,54 @@
             </div>
         </div>
         {% endif %}
+    <!-- Modal para registrar turno presencial (Walk-in) -->
+    <div class="modal fade" id="walkInModal" tabindex="-1" aria-labelledby="walkInModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark text-white border-secondary">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title" id="walkInModalLabel"><i class="bi bi-shop"></i> Registrar Turno Presencial</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="walkInForm" method="post" action="{% url 'register_walk_in' %}">
+                    {% csrf_token %}
+                    <div class="modal-body">
+                        <div class="alert alert-danger d-none" id="walkInErrorAlert"></div>
+                        
+                        <div class="mb-3">
+                            <label for="id_client_name" class="form-label">Nombre del cliente</label>
+                            <input type="text" name="client_name" id="id_client_name" class="form-control bg-secondary text-white border-secondary" required placeholder="Ej. Juan Pérez">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="id_service" class="form-label">Servicio</label>
+                            <select name="service" id="id_service" class="form-select bg-secondary text-white border-secondary" required>
+                                <option value="">Selecciona un servicio...</option>
+                                {% for service in hairdresser.services.all %}
+                                <option value="{{ service.id }}">{{ service.name }} (${{ service.price }} - {{ service.duration_minutes }} min)</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="id_date" class="form-label">Fecha</label>
+                                <input type="date" name="date" id="id_date" class="form-control bg-secondary text-white border-secondary" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="id_start_time_only" class="form-label">Hora de inicio</label>
+                                <input type="time" name="start_time_only" id="id_start_time_only" class="form-control bg-secondary text-white border-secondary" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-secondary">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary" id="walkInSubmitBtn">
+                            <i class="bi bi-save"></i> Registrar Turno
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -503,5 +572,81 @@ function handleTimeAdjustment(appointmentId, delta) {
         alert('Ocurrió un error al intentar ajustar el tiempo del turno.');
     });
 }
+
+// Lógica de carga y envío del formulario de clientes presenciales (Walk-ins)
+document.addEventListener('DOMContentLoaded', function() {
+    const walkInModalEl = document.getElementById('walkInModal');
+    if (walkInModalEl) {
+        walkInModalEl.addEventListener('show.bs.modal', function () {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            document.getElementById('id_date').value = `${year}-${month}-${day}`;
+
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('id_start_time_only').value = `${hours}:${minutes}`;
+            
+            // Limpiar errores y inputs previos
+            document.getElementById('walkInErrorAlert').classList.add('d-none');
+            document.getElementById('id_client_name').value = '';
+            document.getElementById('id_service').value = '';
+        });
+    }
+
+    const walkInFormEl = document.getElementById('walkInForm');
+    if (walkInFormEl) {
+        walkInFormEl.addEventListener('submit', function (e) {
+            e.preventDefault();
+            
+            const form = e.target;
+            const submitBtn = document.getElementById('walkInSubmitBtn');
+            const errorAlert = document.getElementById('walkInErrorAlert');
+            
+            errorAlert.classList.add('d-none');
+            submitBtn.disabled = true;
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Registrando...';
+            
+            const formData = new FormData(form);
+            
+            fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // Cerrar modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('walkInModal'));
+                    modal.hide();
+                    
+                    // Actualizar DOM reactivamente
+                    if (typeof updateWorkstationDOM === 'function') {
+                        updateWorkstationDOM();
+                    } else {
+                        location.reload();
+                    }
+                } else {
+                    errorAlert.textContent = data.message || 'Ocurrió un error al registrar el turno.';
+                    errorAlert.classList.remove('d-none');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalText;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                errorAlert.textContent = 'Error de conexión.';
+                errorAlert.classList.remove('d-none');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            });
+        });
+    }
+});
 </script>
 {% endblock %}

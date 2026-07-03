@@ -3378,5 +3378,134 @@ class AppointmentEventsTestCase(TestCase):
         self.assertEqual(context["slot_max_time"], "24:00:00")
 
 
+class WalkInTestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.owner = User.objects.create_user(
+            username="owner_walkin",
+            password="password123",
+            first_name="Owner",
+            last_name="WalkIn",
+            email="owner_walkin@test.com",
+            is_owner=True,
+        )
+        self.hairdresser = Hairdresser.objects.create(
+            owner=self.owner, name="Salon WalkIn", address="Calle Falsa 123"
+        )
+        # Create a working hour for Tuesday (weekday 1) from 09:00 to 18:00
+        from core.models import WorkingHours
+        import datetime
+        WorkingHours.objects.create(
+            hairdresser=self.hairdresser,
+            day_of_week=1,
+            start_time=datetime.time(9, 0),
+            end_time=datetime.time(18, 0),
+        )
+        self.service = Service.objects.create(
+            hairdresser=self.hairdresser,
+            name="Corte Express",
+            price=150.0,
+            duration_minutes=30,
+        )
+        self.client_user = User.objects.create_user(
+            username="normal_client",
+            password="password123",
+            first_name="Normal",
+            last_name="Client",
+            email="client@test.com",
+            is_owner=False,
+        )
+
+    def test_owner_register_walk_in_success(self):
+        self.client.login(username="owner_walkin", password="password123")
+        url = reverse("register_walk_in")
+        
+        # Tuesday, 2026-07-07 10:00 (Tuesday is weekday 1)
+        post_data = {
+            "service": self.service.id,
+            "client_name": "Pedro Picapiedra",
+            "date": "2026-07-07",
+            "start_time_only": "10:00",
+        }
+        response = self.client.post(url, post_data)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+        
+        # Verify appointment was created correctly
+        appointment = Appointment.objects.get(client_name="Pedro Picapiedra")
+        self.assertEqual(appointment.status, "CONFIRMED")
+        self.assertEqual(appointment.payment_method, "CASH")
+        self.assertEqual(appointment.amount_paid, 0.0)
+        self.assertIsNone(appointment.client)
+        self.assertEqual(appointment.display_client_name, "Pedro Picapiedra")
+        self.assertIn("Pedro Picapiedra", str(appointment))
+
+    def test_walk_in_overlap_fails(self):
+        # Create existing confirmed appointment
+        import datetime
+        from django.utils import timezone
+        naive_dt = datetime.datetime(2026, 7, 7, 10, 0)
+        start_time = timezone.make_aware(naive_dt, timezone.get_current_timezone())
+        Appointment.objects.create(
+            service=self.service,
+            start_time=start_time,
+            status="CONFIRMED",
+            payment_method="CASH",
+            client_name="Cliente 1"
+        )
+        
+        self.client.login(username="owner_walkin", password="password123")
+        url = reverse("register_walk_in")
+        
+        # Try to register overlapping walk-in (Tuesday, 10:15)
+        post_data = {
+            "service": self.service.id,
+            "client_name": "Pedro Picapiedra",
+            "date": "2026-07-07",
+            "start_time_only": "10:15",
+        }
+        response = self.client.post(url, post_data)
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertEqual(data["status"], "error")
+        self.assertIn("disponible", data["message"])
+
+    def test_walk_in_outside_working_hours_fails(self):
+        self.client.login(username="owner_walkin", password="password123")
+        url = reverse("register_walk_in")
+        
+        # Try to register outside working hours (Tuesday, 20:00)
+        post_data = {
+            "service": self.service.id,
+            "client_name": "Pedro Picapiedra",
+            "date": "2026-07-07",
+            "start_time_only": "20:00",
+        }
+        response = self.client.post(url, post_data)
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertEqual(data["status"], "error")
+        self.assertIn("horario de atenci\u00f3n", data["message"])
+
+    def test_walk_in_unauthorized_fails(self):
+        url = reverse("register_walk_in")
+        post_data = {
+            "service": self.service.id,
+            "client_name": "Pedro Picapiedra",
+            "date": "2026-07-07",
+            "start_time_only": "10:00",
+        }
+        
+        # Anonymous user
+        response = self.client.post(url, post_data)
+        self.assertEqual(response.status_code, 302)  # Redirects to login
+        
+        # Normal client user (non-owner)
+        self.client.login(username="normal_client", password="password123")
+        response = self.client.post(url, post_data)
+        self.assertEqual(response.status_code, 302)  # Redirects to home due to OwnerRequiredMixin
+
+
 
 

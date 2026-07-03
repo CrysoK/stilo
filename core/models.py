@@ -350,6 +350,20 @@ class Appointment(models.Model):
         verbose_name="ID de pago de MercadoPago",
         help_text="ID del pago en MercadoPago para procesar reembolsos",
     )
+    client_name = models.CharField(
+        max_length=150,
+        blank=True,
+        null=True,
+        verbose_name="Nombre del cliente presencial",
+        help_text="Nombre del cliente para reservas presenciales (walk-ins)."
+    )
+
+    @property
+    def display_client_name(self):
+        if self.client:
+            name = f"{self.client.first_name} {self.client.last_name}".strip()
+            return name if name else self.client.username
+        return self.client_name or "Cliente Presencial"
 
     def get_required_deposit_amount(self):
         if (
@@ -457,14 +471,14 @@ class Appointment(models.Model):
                     context={"appointment": self},
                     subject="Confirmación de Turno - Stilo",
                 )
-            owner = self.service.hairdresser.owner
-            if owner:
-                notify_user(
-                    user=owner,
-                    event_type="APPOINTMENT_SUCCESS_OWNER",
-                    context={"appointment": self},
-                    subject="Nueva Reserva Recibida - Stilo",
-                )
+                owner = self.service.hairdresser.owner
+                if owner:
+                    notify_user(
+                        user=owner,
+                        event_type="APPOINTMENT_SUCCESS_OWNER",
+                        context={"appointment": self},
+                        subject="Nueva Reserva Recibida - Stilo",
+                    )
         elif is_pending_request:
             if self.client:
                 notify_user(
@@ -473,14 +487,14 @@ class Appointment(models.Model):
                     context={"appointment": self},
                     subject="Solicitud de Turno Recibida - Stilo",
                 )
-            owner = self.service.hairdresser.owner
-            if owner:
-                notify_user(
-                    user=owner,
-                    event_type="APPOINTMENT_REQUEST_OWNER",
-                    context={"appointment": self},
-                    subject="Nueva Solicitud de Turno - Stilo",
-                )
+                owner = self.service.hairdresser.owner
+                if owner:
+                    notify_user(
+                        user=owner,
+                        event_type="APPOINTMENT_REQUEST_OWNER",
+                        context={"appointment": self},
+                        subject="Nueva Solicitud de Turno - Stilo",
+                    )
         elif is_cancelled:
             if self.client:
                 notify_user(
@@ -489,14 +503,14 @@ class Appointment(models.Model):
                     context={"appointment": self},
                     subject="Turno Cancelado - Stilo",
                 )
-            owner = self.service.hairdresser.owner
-            if owner:
-                notify_user(
-                    user=owner,
-                    event_type="APPOINTMENT_CANCELLED_OWNER",
-                    context={"appointment": self},
-                    subject="Reserva Cancelada - Stilo",
-                )
+                owner = self.service.hairdresser.owner
+                if owner:
+                    notify_user(
+                        user=owner,
+                        event_type="APPOINTMENT_CANCELLED_OWNER",
+                        context={"appointment": self},
+                        subject="Reserva Cancelada - Stilo",
+                    )
 
     def can_be_cancelled_by_client(self):
         """
@@ -594,7 +608,8 @@ class Appointment(models.Model):
                 return f"En el local ({format_curr(self.amount)})"
 
     def __str__(self):
-        return f"Turno para {self.client} en {self.service.hairdresser.name} a las {self.start_time.strftime('%Y-%m-%d %H:%M')}"
+        client_desc = self.client if self.client else (self.client_name or "Cliente Presencial")
+        return f"Turno para {client_desc} en {self.service.hairdresser.name} a las {self.start_time.strftime('%Y-%m-%d %H:%M')}"
 
 
 class Review(models.Model):
