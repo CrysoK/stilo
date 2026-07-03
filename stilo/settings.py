@@ -198,13 +198,18 @@ if not DEBUG:
     assert MERCADOPAGO_WEBHOOK_SECRET, "¡Se requiere MERCADOPAGO_WEBHOOK_SECRET en producción!"
 
 
+# Detectar si estamos ejecutando tests
+import sys
+TESTING = 'test' in sys.argv
+log_suffix = '_test' if TESTING else ''
+
 # Configuración de Logging temático: archivos separados por funcionalidad
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
+            'format': '{asctime} {levelname} {module} {message}',
             'style': '{',
         },
         'simple': {
@@ -220,7 +225,7 @@ LOGGING = {
         'mp_file': {
             'level': 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': BASE_DIR / 'logs' / 'mercadopago.log',
+            'filename': BASE_DIR / 'logs' / f'mercadopago{log_suffix}.log',
             'formatter': 'verbose',
             'encoding': 'utf-8',
             'maxBytes': 5 * 1024 * 1024,  # 5 MB
@@ -229,7 +234,7 @@ LOGGING = {
         'cron_file': {
             'level': 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': BASE_DIR / 'logs' / 'cron.log',
+            'filename': BASE_DIR / 'logs' / f'cron{log_suffix}.log',
             'formatter': 'verbose',
             'encoding': 'utf-8',
             'maxBytes': 5 * 1024 * 1024,
@@ -238,7 +243,7 @@ LOGGING = {
         'core_file': {
             'level': 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': BASE_DIR / 'logs' / 'core.log',
+            'filename': BASE_DIR / 'logs' / f'core{log_suffix}.log',
             'formatter': 'verbose',
             'encoding': 'utf-8',
             'maxBytes': 5 * 1024 * 1024,
