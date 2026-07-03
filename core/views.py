@@ -1374,6 +1374,27 @@ class RegisterWalkInView(OwnerRequiredMixin, View):
             return JsonResponse({"status": "error", "message": error_message}, status=400)
 
 
+class AddPauseView(OwnerRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        hairdresser = request.user.hairdresser_profile
+        minutes_str = request.POST.get("minutes")
+        if not minutes_str:
+            return JsonResponse({"status": "error", "message": "Debe especificar la duración de la pausa."}, status=400)
+        
+        try:
+            minutes = int(minutes_str)
+            if minutes <= 0:
+                raise ValueError()
+        except ValueError:
+            return JsonResponse({"status": "error", "message": "La duración de la pausa debe ser un número entero positivo."}, status=400)
+        
+        from core.utils import add_schedule_pause
+        shifted_count = add_schedule_pause(hairdresser, minutes)
+        
+        msg = f"Se ha agregado la pausa de {minutes} minutos. Se reprogramaron {shifted_count} turnos posteriores."
+        return JsonResponse({"status": "success", "message": msg})
+
+
 class WorkstationView(OwnerRequiredMixin, TemplateView):
     template_name = "workstation.html"
 

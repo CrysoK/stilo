@@ -610,3 +610,57 @@ def notify_rescheduled_appointments(appointments):
             )
 
 
+def add_schedule_pause(hairdresser, delta_minutes):
+    """
+    Agrega una pausa desplazando en cascada todos los turnos futuros del día.
+    Retorna el número de turnos desplazados.
+    """
+    from datetime import timedelta
+    from django.utils import timezone
+    from core.models import Appointment
+
+    now = timezone.now()
+    today = timezone.localtime(now).date()
+
+    # Buscar todos los turnos CONFIRMED o PENDING del día de la misma peluquería que empiecen en el futuro
+    subsequent = Appointment.objects.filter(
+        service__hairdresser=hairdresser,
+        start_time__date=today,
+        start_time__gt=now,
+    ).exclude(status__in=["COMPLETED", "NO_SHOW", "CANCELLED"]).order_by("start_time")
+
+    affected_to_notify = []
+
+    for app in subsequent:
+        app.start_time = app.start_time + timedelta(minutes=delta_minutes)
+        app.save()  # Esto recalcula y guarda end_time automáticamente
+
+        # Lógica de notificaciones escalonadas para evitar spam:
+        remaining_minutes = (app.start_time - now).total_seconds() / 60
+
+        should_notify = False
+        if not app.last_notified_start_time:
+            if remaining_minutes <= 120:
+                should_notify = True
+        else:
+            last_remaining = (app.last_notified_start_time - now).total_seconds() / 60
+            
+            if remaining_minutes <= 30:
+                if app.start_time != app.last_notified_start_time:
+                    should_notify = True
+            elif remaining_minutes <= 60 and last_remaining > 60:
+                should_notify = True
+            elif remaining_minutes <= 120 and last_remaining > 120:
+                should_notify = True
+            elif remaining_minutes > 60 and last_remaining <= 60:
+                should_notify = True
+            elif remaining_minutes > 120 and last_remaining <= 120:
+                should_notify = True
+
+        if should_notify:
+            affected_to_notify.append(app)
+
+    notify_rescheduled_appointments(affected_to_notify)
+    return len(subsequent)
+
+

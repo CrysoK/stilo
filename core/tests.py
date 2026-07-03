@@ -3507,5 +3507,130 @@ class WalkInTestCase(TestCase):
         self.assertEqual(response.status_code, 302)  # Redirects to home due to OwnerRequiredMixin
 
 
+class SchedulePauseTestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.owner = User.objects.create_user(
+            username="owner_pause",
+            password="password123",
+            first_name="Owner",
+            last_name="Pause",
+            email="owner_pause@test.com",
+            is_owner=True,
+        )
+        self.hairdresser = Hairdresser.objects.create(
+            owner=self.owner, name="Salon Pause", address="Calle Falsa 123"
+        )
+        self.service = Service.objects.create(
+            hairdresser=self.hairdresser,
+            name="Corte Tradicional",
+            price=200.0,
+            duration_minutes=30,
+        )
+        self.normal_user = User.objects.create_user(
+            username="normal_user",
+            password="password123",
+            first_name="Normal",
+            last_name="User",
+            email="normal@test.com",
+            is_owner=False,
+        )
+
+    def test_add_schedule_pause_success(self):
+        import datetime
+        from django.utils import timezone
+        from core.models import Appointment
+
+        # Create two appointments for today in the future
+        now = timezone.now()
+        today = timezone.localtime(now).date()
+        
+        # Future appointment 1: starts in 2 hours
+        start_1 = timezone.make_aware(
+            datetime.datetime.combine(today, datetime.time(15, 0)),
+            timezone.get_current_timezone()
+        )
+        # Ensure it's in the future compared to now. If not, let's use timezone.now() + 2 hours
+        if start_1 < now:
+            start_1 = now + datetime.timedelta(hours=2)
+            
+        start_2 = start_1 + datetime.timedelta(minutes=45)
+
+        app1 = Appointment.objects.create(
+            service=self.service,
+            start_time=start_1,
+            status="CONFIRMED",
+            payment_method="CASH",
+            client_name="Cliente 1"
+        )
+        app2 = Appointment.objects.create(
+            service=self.service,
+            start_time=start_2,
+            status="CONFIRMED",
+            payment_method="CASH",
+            client_name="Cliente 2"
+        )
+
+        self.client.login(username="owner_pause", password="password123")
+        url = reverse("add_pause")
+        
+        # Add 30-minute pause
+        response = self.client.post(url, {"minutes": 30})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+        self.assertIn("30 minutos", data["message"])
+        
+        # Check that both appointments were shifted by exactly 30 minutes
+        app1.refresh_from_db()
+        app2.refresh_from_db()
+        
+        self.assertEqual(app1.start_time, start_1 + datetime.timedelta(minutes=30))
+        self.assertEqual(app2.start_time, start_2 + datetime.timedelta(minutes=30))
+
+    def test_add_schedule_pause_past_unaffected(self):
+        import datetime
+        from django.utils import timezone
+        from core.models import Appointment
+
+        # Create an appointment in the past of today
+        now = timezone.now()
+        today = timezone.localtime(now).date()
+        
+        # Past appointment: 2 hours ago
+        start_past = now - datetime.timedelta(hours=2)
+
+        app_past = Appointment.objects.create(
+            service=self.service,
+            start_time=start_past,
+            status="CONFIRMED",
+            payment_method="CASH",
+            client_name="Cliente Antiguo"
+        )
+
+        self.client.login(username="owner_pause", password="password123")
+        url = reverse("add_pause")
+        
+        # Add 30-minute pause
+        response = self.client.post(url, {"minutes": 30})
+        self.assertEqual(response.status_code, 200)
+        
+        # Past appointment should NOT be affected
+        app_past.refresh_from_db()
+        self.assertEqual(app_past.start_time, start_past)
+
+    def test_add_schedule_pause_unauthorized_fails(self):
+        url = reverse("add_pause")
+        
+        # Anonymous
+        response = self.client.post(url, {"minutes": 15})
+        self.assertEqual(response.status_code, 302)
+        
+        # Non-owner
+        self.client.login(username="normal_user", password="password123")
+        response = self.client.post(url, {"minutes": 15})
+        self.assertEqual(response.status_code, 302) # Redirects to home due to OwnerRequiredMixin
+
+
 
 

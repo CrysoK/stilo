@@ -23,6 +23,7 @@ from .views import (
     busiest_days_chart_data,
     WorkstationView,
     RegisterWalkInView,
+    AddPauseView,
     update_appointment_status,
     cancel_appointment_client,
     adjust_appointment_time,
@@ -65,6 +66,11 @@ urlpatterns = [
         "workstation/register-walk-in/",
         RegisterWalkInView.as_view(),
         name="register_walk_in",
+    ),
+    path(
+        "workstation/add-pause/",
+        AddPauseView.as_view(),
+        name="add_pause",
     ),
     path(
         "workstation/appointment/<int:pk>/update-status/",

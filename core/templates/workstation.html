@@ -52,6 +52,9 @@
             <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#walkInModal">
                 <i class="bi bi-plus-circle"></i> Registrar Turno Presencial
             </button>
+            <button class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#pauseModal">
+                <i class="bi bi-pause-circle"></i> Agregar Pausa
+            </button>
         </div>
         <span class="badge bg-primary fs-5" id="live-clock"></span>
     </div>
@@ -290,6 +293,52 @@
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                         <button type="submit" class="btn btn-primary" id="walkInSubmitBtn">
                             <i class="bi bi-save"></i> Registrar Turno
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <!-- Modal para agregar pausa -->
+    <div class="modal fade" id="pauseModal" tabindex="-1" aria-labelledby="pauseModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark text-white border-secondary">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title" id="pauseModalLabel"><i class="bi bi-pause-circle"></i> Agregar Pausa en la Agenda</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="pauseForm" method="post" action="{% url 'add_pause' %}">
+                    {% csrf_token %}
+                    <div class="modal-body">
+                        <div class="alert alert-danger d-none" id="pauseErrorAlert"></div>
+                        <p class="text-white-50 small mb-3">Introducir una pausa retrasará en cascada la hora de inicio de todos los turnos restantes programados para hoy.</p>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Duración de la pausa</label>
+                            <div class="row g-2 mb-3">
+                                <div class="col-3">
+                                    <button type="button" class="btn btn-outline-secondary w-100 py-2 btn-pause-preset" data-minutes="15">15m</button>
+                                </div>
+                                <div class="col-3">
+                                    <button type="button" class="btn btn-outline-secondary w-100 py-2 btn-pause-preset" data-minutes="30">30m</button>
+                                </div>
+                                <div class="col-3">
+                                    <button type="button" class="btn btn-outline-secondary w-100 py-2 btn-pause-preset" data-minutes="45">45m</button>
+                                </div>
+                                <div class="col-3">
+                                    <button type="button" class="btn btn-outline-secondary w-100 py-2 btn-pause-preset" data-minutes="60">60m</button>
+                                </div>
+                            </div>
+                            <div class="input-group">
+                                <span class="input-group-text bg-secondary text-white border-secondary">Minutos personalizados</span>
+                                <input type="number" name="minutes" id="id_pause_minutes" min="1" class="form-control bg-secondary text-white border-secondary" required placeholder="Ej. 20">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-secondary">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-warning text-dark fw-semibold" id="pauseSubmitBtn">
+                            <i class="bi bi-clock-fill"></i> Aplicar Pausa
                         </button>
                     </div>
                 </form>
@@ -633,6 +682,87 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 } else {
                     errorAlert.textContent = data.message || 'Ocurrió un error al registrar el turno.';
+                    errorAlert.classList.remove('d-none');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalText;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                errorAlert.textContent = 'Error de conexión.';
+                errorAlert.classList.remove('d-none');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            });
+        });
+    }
+
+    // Lógica para el modal de pausas (presets y envío)
+    const pauseModalEl = document.getElementById('pauseModal');
+    if (pauseModalEl) {
+        pauseModalEl.addEventListener('show.bs.modal', function () {
+            document.getElementById('pauseErrorAlert').classList.add('d-none');
+            document.getElementById('id_pause_minutes').value = '';
+            
+            // Deseleccionar botones preestablecidos
+            document.querySelectorAll('.btn-pause-preset').forEach(btn => {
+                btn.classList.remove('active', 'btn-warning');
+                btn.classList.add('btn-outline-secondary');
+            });
+        });
+    }
+
+    // Configurar botones de presets
+    document.querySelectorAll('.btn-pause-preset').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.btn-pause-preset').forEach(b => {
+                b.classList.remove('active', 'btn-warning');
+                b.classList.add('btn-outline-secondary');
+            });
+            this.classList.remove('btn-outline-secondary');
+            this.classList.add('active', 'btn-warning');
+            document.getElementById('id_pause_minutes').value = this.dataset.minutes;
+        });
+    });
+
+    const pauseFormEl = document.getElementById('pauseForm');
+    if (pauseFormEl) {
+        pauseFormEl.addEventListener('submit', function (e) {
+            e.preventDefault();
+            
+            const form = e.target;
+            const submitBtn = document.getElementById('pauseSubmitBtn');
+            const errorAlert = document.getElementById('pauseErrorAlert');
+            
+            errorAlert.classList.add('d-none');
+            submitBtn.disabled = true;
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Aplicando...';
+            
+            const formData = new FormData(form);
+            
+            fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // Cerrar modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('pauseModal'));
+                    modal.hide();
+                    
+                    // Actualizar DOM reactivamente
+                    if (typeof updateWorkstationDOM === 'function') {
+                        updateWorkstationDOM();
+                    } else {
+                        location.reload();
+                    }
+                } else {
+                    errorAlert.textContent = data.message || 'Ocurrió un error al aplicar la pausa.';
                     errorAlert.classList.remove('d-none');
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = originalText;
