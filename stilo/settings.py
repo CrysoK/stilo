@@ -190,6 +190,9 @@ CSRF_TRUSTED_ORIGINS += ["http://localhost", "http://127.0.0.1"]
 # Confiar en el encabezado de proxy SSL provisto por el túnel (para generar enlaces HTTPS)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+# Dominio base del sitio para enlaces absolutos en correos
+SITE_URL = config("SITE_URL", default="http://localhost:8000")
+
 # Validación obligatoria de secretos en producción
 if not DEBUG:
     assert MERCADOPAGO_WEBHOOK_SECRET, "¡Se requiere MERCADOPAGO_WEBHOOK_SECRET en producción!"

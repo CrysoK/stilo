@@ -233,6 +233,17 @@ def notify_user(user, event_type, context, subject, push_title=None, push_messag
 
     template_name = template_map.get(event_type)
     if template_name and getattr(user, "email", None):
+        # Clonar context e inyectar URLs útiles absolutas
+        context = dict(context or {})
+        from django.urls import reverse
+        base_url = settings.SITE_URL.rstrip("/")
+        context.setdefault("site_url", base_url)
+        context.setdefault("home_url", f"{base_url}{reverse('home')}")
+        context.setdefault("my_appointments_url", f"{base_url}{reverse('my_appointments')}")
+        context.setdefault("owner_appointments_url", f"{base_url}{reverse('owner_appointments')}")
+        context.setdefault("workstation_url", f"{base_url}{reverse('workstation')}")
+        context.setdefault("login_url", f"{base_url}{reverse('login')}")
+
         success = send_html_email(
             subject=subject,
             template_name=template_name,
@@ -281,7 +292,7 @@ def notify_user(user, event_type, context, subject, push_title=None, push_messag
                 push_message = f"Recuerda tu turno para {service_name} en {hairdresser_name} mañana el {time_str}.{pay_suffix}"
             elif event_type == "APPOINTMENT_RESCHEDULED_CLIENT":
                 push_title = "Turno Reprogramado"
-                push_message = f"Tu turno para {service_name} en {hairdresser_name} ha sido reprogramado para las {timezone.localtime(appointment.start_time).strftime('%H:%M')} hs."
+                push_message = f"Tu turno para {service_name} en {hairdresser_name} ha sido reprogramado para las {timezone.localtime(appointment.start_time).strftime('%H:%M')} hs. Si no te queda bien, podés cancelarlo desde mis turnos y reservar para otro día."
             elif event_type == "APPOINTMENT_EARLY_OFFER":
                 push_title = "¡Adelantá tu turno!"
                 push_message = f"¿Querés adelantar tu turno para {service_name} a las {timezone.localtime(appointment.start_time).strftime('%H:%M')} hs? Tenés 2 minutos para responder."
