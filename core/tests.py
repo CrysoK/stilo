@@ -3632,5 +3632,154 @@ class SchedulePauseTestCase(TestCase):
         self.assertEqual(response.status_code, 302) # Redirects to home due to OwnerRequiredMixin
 
 
+class OwnerAppointmentSearchTestCase(TestCase):
+    def setUp(self):
+        from core.models import User, Hairdresser, Service, Appointment
+        from django.test import Client
+        import datetime
+        from django.utils import timezone
+
+        self.client = Client()
+        self.owner = User.objects.create_user(
+            username="owner_search",
+            password="password123",
+            first_name="Owner",
+            last_name="Search",
+            email="owner_search@test.com",
+            is_owner=True,
+        )
+        self.hairdresser = Hairdresser.objects.create(
+            owner=self.owner, name="Salon Search", address="Calle Falsa 123"
+        )
+        self.service = Service.objects.create(
+            hairdresser=self.hairdresser,
+            name="Corte Tradicional",
+            price=200.0,
+            duration_minutes=30,
+        )
+
+        self.client_user1 = User.objects.create_user(
+            username="client_user1",
+            password="password123",
+            first_name="Juan",
+            last_name="Perez",
+            email="juan.perez@test.com",
+            is_owner=False,
+        )
+        self.client_user2 = User.objects.create_user(
+            username="client_user2",
+            password="password123",
+            first_name="Maria",
+            last_name="Gomez",
+            email="maria.gomez@test.com",
+            is_owner=False,
+        )
+
+        # Create appointments
+        now = timezone.now()
+        start1 = now + datetime.timedelta(days=1)
+        start2 = now + datetime.timedelta(days=2)
+        start3 = now + datetime.timedelta(days=3)
+
+        self.app1 = Appointment.objects.create(
+            client=self.client_user1,
+            service=self.service,
+            start_time=start1,
+            status="CONFIRMED",
+            payment_method="CASH",
+            amount=200.0,
+        )
+        self.app2 = Appointment.objects.create(
+            client=self.client_user2,
+            service=self.service,
+            start_time=start2,
+            status="CONFIRMED",
+            payment_method="CASH",
+            amount=200.0,
+        )
+        self.app3 = Appointment.objects.create(
+            client_name="Pedro Picapiedra",
+            service=self.service,
+            start_time=start3,
+            status="CONFIRMED",
+            payment_method="CASH",
+            amount=200.0,
+        )
+
+    def test_search_no_query_returns_all(self):
+        self.client.login(username="owner_search", password="password123")
+        url = reverse("owner_appointments")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        appointments = response.context["appointments"]
+        self.assertEqual(len(appointments), 3)
+
+    def test_search_by_first_name(self):
+        self.client.login(username="owner_search", password="password123")
+        url = reverse("owner_appointments")
+        
+        # Search for "Juan"
+        response = self.client.get(url, {"q": "Juan"})
+        self.assertEqual(response.status_code, 200)
+        appointments = response.context["appointments"]
+        self.assertEqual(len(appointments), 1)
+        self.assertEqual(appointments[0].pk, self.app1.pk)
+
+    def test_search_by_last_name(self):
+        self.client.login(username="owner_search", password="password123")
+        url = reverse("owner_appointments")
+        
+        # Search for "Gomez"
+        response = self.client.get(url, {"q": "Gomez"})
+        self.assertEqual(response.status_code, 200)
+        appointments = response.context["appointments"]
+        self.assertEqual(len(appointments), 1)
+        self.assertEqual(appointments[0].pk, self.app2.pk)
+
+    def test_search_by_email(self):
+        self.client.login(username="owner_search", password="password123")
+        url = reverse("owner_appointments")
+        
+        # Search for "perez@test"
+        response = self.client.get(url, {"q": "perez@test"})
+        self.assertEqual(response.status_code, 200)
+        appointments = response.context["appointments"]
+        self.assertEqual(len(appointments), 1)
+        self.assertEqual(appointments[0].pk, self.app1.pk)
+
+    def test_search_by_walk_in_name(self):
+        self.client.login(username="owner_search", password="password123")
+        url = reverse("owner_appointments")
+        
+        # Search for "Pedro"
+        response = self.client.get(url, {"q": "Pedro"})
+        self.assertEqual(response.status_code, 200)
+        appointments = response.context["appointments"]
+        self.assertEqual(len(appointments), 1)
+        self.assertEqual(appointments[0].pk, self.app3.pk)
+
+    def test_search_case_insensitive(self):
+        self.client.login(username="owner_search", password="password123")
+        url = reverse("owner_appointments")
+        
+        # Search for "MARIA"
+        response = self.client.get(url, {"q": "MARIA"})
+        self.assertEqual(response.status_code, 200)
+        appointments = response.context["appointments"]
+        self.assertEqual(len(appointments), 1)
+        self.assertEqual(appointments[0].pk, self.app2.pk)
+
+    def test_search_no_results(self):
+        self.client.login(username="owner_search", password="password123")
+        url = reverse("owner_appointments")
+        
+        # Search for "Inexistente"
+        response = self.client.get(url, {"q": "Inexistente"})
+        self.assertEqual(response.status_code, 200)
+        appointments = response.context["appointments"]
+        self.assertEqual(len(appointments), 0)
+
+
+
 
 

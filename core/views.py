@@ -712,12 +712,23 @@ class OwnerAppointmentListView(OwnerRequiredMixin, ListView):
             except ValueError:
                 pass
 
+        # Filtro por texto (búsqueda de cliente)
+        q = self.request.GET.get("q", "").strip()
+        if q:
+            qs = qs.filter(
+                Q(client__first_name__icontains=q)
+                | Q(client__last_name__icontains=q)
+                | Q(client__email__icontains=q)
+                | Q(client_name__icontains=q)
+            )
+
         return qs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["status_filter"] = self.request.GET.get("status", "")
         context["month_filter"] = self.request.GET.get("month", "")
+        context["q_filter"] = self.request.GET.get("q", "")
         context["status_choices"] = Appointment.STATUS_CHOICES
         # Contadores por estado para el resumen rápido
         hairdresser = self.request.user.hairdresser_profile  # type: ignore
