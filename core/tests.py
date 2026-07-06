@@ -2867,7 +2867,20 @@ class ServiceViewsTestCase(TestCase):
         self.assertEqual(response.status_code, 302)
 
 
+import shutil
+import tempfile
+from django.test import override_settings
+
+TEMP_MEDIA_ROOT = tempfile.mkdtemp()
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
 class HomeSearchFilterTestCase(TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
+
     def setUp(self):
         self.client = Client()
         
