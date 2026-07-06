@@ -1,7 +1,7 @@
 {% extends "emails/base_email.html" %}
 
 {% block content %}
-<h2 style="color: #dc3545;">Reserva Cancelada</h2>
+<h2 style="color: #dc3545;">Reserva cancelada</h2>
 <p>Hola, {{ appointment.service.hairdresser.owner.first_name }}:</p>
 <p>Te informamos que se ha cancelado una de las reservas agendadas en tu peluquería, <strong>{{ appointment.service.hairdresser.name }}</strong>. Los detalles de la cita cancelada son:</p>
 

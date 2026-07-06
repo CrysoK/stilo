@@ -1,7 +1,7 @@
 {% extends "emails/base_email.html" %}
 
 {% block content %}
-<h2>Recordatorio de Turno para Mañana</h2>
+<h2>Recordatorio de turno para mañana</h2>
 <p>Hola, {{ appointment.client.first_name }}:</p>
 <p>Te escribimos para recordarte que mañana tienes un turno agendado en <strong>{{ appointment.service.hairdresser.name }}</strong>. Los detalles de tu cita son:</p>
 
@@ -16,7 +16,7 @@
     </div>
     <div class="detail-row">
         <span class="detail-label">Fecha:</span>
-        <span class="detail-value">{{ appointment.start_time|date:"d/m/Y" }} (Mañana)</span>
+        <span class="detail-value">{{ appointment.start_time|date:"d/m/Y" }} (mañana)</span>
     </div>
     <div class="detail-row">
         <span class="detail-label">Hora:</span>

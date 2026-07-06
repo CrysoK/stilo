@@ -3,13 +3,25 @@
 
 {% block title %}Registrarse{% endblock %}
 
-
 {% block content %}
-<h2>Registrarse</h2>
-<form method="post">
-  {% csrf_token %}
-  {{ form|crispy }}
-  <button type="submit" class="btn btn-primary">Registrarse</button>
-</form>
+<div class="container py-5 animate-fade-in">
+  <div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+      <div class="card shadow-lg">
+        <div class="card-body p-4 p-md-5">
+          <h2 class="card-title fw-bold text-center text-white mb-4"><i class="bi bi-person-plus text-gold me-2"></i>Crear cuenta</h2>
+          <form method="post">
+            {% csrf_token %}
+            {{ form|crispy }}
+            <button type="submit" class="btn btn-primary w-100 mt-3 py-2.5 fw-bold"><i class="bi bi-person-check me-1"></i> Registrarse</button>
+          </form>
+          <div class="text-center mt-4">
+            <span class="text-muted small">¿Ya tienes una cuenta? <a href="{% url 'login' %}" class="text-gold text-decoration-none fw-semibold">Inicia sesión aquí</a></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 

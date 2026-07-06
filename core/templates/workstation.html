@@ -41,76 +41,100 @@
         filter: brightness(1);
     }
 }
+@keyframes ping {
+  75%, 100% { transform: scale(2); opacity: 0; }
+}
+.text-gold { color: #facc15; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+<div class="container py-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-5 flex-wrap gap-3">
+        <div>
+            <h2 class="mb-1 text-white fw-bold"><i class="bi bi-calendar3 text-gold me-2"></i>Agenda de hoy</h2>
+            <p class="text-muted mb-0"><i class="bi bi-shop text-gold me-1"></i> {{ hairdresser.name }}</p>
+        </div>
         <div class="d-flex align-items-center gap-3 flex-wrap">
-            <h2 class="mb-0">Agenda del día - {{ hairdresser.name }}</h2>
-            <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#walkInModal">
-                <i class="bi bi-plus-circle"></i> Registrar Turno Presencial
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#walkInModal">
+                <i class="bi bi-plus-circle me-1"></i> Registrar presencial
             </button>
             <button class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#pauseModal">
-                <i class="bi bi-pause-circle"></i> Agregar Pausa
+                <i class="bi bi-pause-circle me-1"></i> Agregar pausa
             </button>
+            <span class="badge border border-secondary-subtle px-3 py-2 fs-6 shadow ms-lg-3" id="live-clock" style="background: rgba(255,255,255,0.02); font-family: monospace; letter-spacing: 0.05em; color: var(--accent-gold);"></span>
         </div>
-        <span class="badge bg-primary fs-5" id="live-clock"></span>
     </div>
 
-    <div class="row">
+    <div class="row g-4">
         <!-- Columna principal: turno actual y siguiente -->
         <div class="col-lg-8">
             <!-- Turno actual -->
             <div id="current-appointment-section">
                 {% if current_appointment %}
-                <div class="card text-white bg-success mb-4" data-appointment-id="{{ current_appointment.pk }}">
-                    <div class="card-header d-flex justify-content-between">
-                        <h4 class="mb-0">Atendiendo ahora</h4>
-                        <span class="badge bg-light text-dark align-self-center" id="current-badge">
-                            <span id="current-badge-text">Finaliza en:</span> <span class="countdown" data-countdown-to="{{ current_appointment.end_time.isoformat }}">--:--</span>
+                <div class="card shadow-lg border-start border-4 border-success mb-4" data-appointment-id="{{ current_appointment.pk }}" style="background: rgba(16, 185, 129, 0.04);">
+                    <div class="card-header d-flex justify-content-between align-items-center bg-transparent border-secondary-subtle">
+                        <h4 class="mb-0 text-success fw-bold d-flex align-items-center gap-2">
+                            <span class="position-relative d-inline-flex" style="width: 12px; height: 12px;">
+                              <span class="position-absolute inline-flex h-100 w-100 rounded-circle bg-success opacity-75 animate-ping" style="animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></span>
+                              <span class="position-relative inline-flex rounded-circle h-3 w-3 bg-success"></span>
+                            </span>
+                            Atendiendo ahora
+                        </h4>
+                        <span class="badge bg-success align-self-center py-2" id="current-badge">
+                            <span id="current-badge-text" class="fw-bold">Finaliza en:</span> <span class="countdown fw-bold" data-countdown-to="{{ current_appointment.end_time.isoformat }}">--:--</span>
                         </span>
                     </div>
-                    <div class="card-body">
-                        <h5 class="card-title">
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold text-white mb-3 fs-4">
                             {{ current_appointment.display_client_name }}
                             {% if not current_appointment.client %}
-                            <span class="badge bg-light text-dark small fs-6 ms-2"><i class="bi bi-shop"></i> Presencial</span>
+                            <span class="badge bg-secondary text-light small fs-6 ms-2"><i class="bi bi-shop me-1"></i> Presencial</span>
                             {% endif %}
                         </h5>
-                        <p class="card-text mb-1"><strong>Servicio:</strong> {{ current_appointment.service.name }}</p>
-                        <p class="card-text mb-1"><strong>Horario:</strong> {{ current_appointment.start_time|time:"H:i" }} - {{ current_appointment.end_time|time:"H:i" }}</p>
+                        
+                        <div class="row g-3 mb-4">
+                            <div class="col-sm-6">
+                                <p class="card-text text-muted mb-1 small">SERVICIO</p>
+                                <strong class="text-white fs-5"><i class="bi bi-scissors text-gold me-1"></i> {{ current_appointment.service.name }}</strong>
+                            </div>
+                            <div class="col-sm-6">
+                                <p class="card-text text-muted mb-1 small">HORARIO</p>
+                                <strong class="text-white fs-5"><i class="bi bi-clock text-gold me-1"></i> {{ current_appointment.start_time|time:"H:i" }} - {{ current_appointment.end_time|time:"H:i" }}</strong>
+                            </div>
+                        </div>
+
                         {% if current_appointment.service.hairdresser.mercadopago_active %}
-                        <div class="mt-2">
+                        <div class="mb-4">
                             {% with pay_info=current_appointment.get_payment_status_info %}
-                            <span class="badge {{ pay_info.badge_class }}"><i class="bi {{ pay_info.icon }}"></i> {{ pay_info.label }}</span>
+                            <span class="badge {{ pay_info.badge_class }} fs-6 px-3 py-2"><i class="bi {{ pay_info.icon }} me-1"></i> {{ pay_info.label }}</span>
                             {% if pay_info.detail %}
-                            <small class="d-block mt-1 text-white-50"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
+                            <small class="d-block mt-2 text-white-50"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
                             {% endif %}
                             {% endwith %}
                         </div>
                         {% endif %}
-                        <div class="mt-3 pt-3" style="border-top: 1px solid rgba(255, 255, 255, 0.2) !important;">
-                            <h6 class="text-white-50 small mb-2"><i class="bi bi-clock-history"></i> Retrasar / Adelantar turno:</h6>
-                            <div class="btn-group btn-group-sm" role="group" aria-label="Ajustar tiempo">
-                                <button class="btn btn-outline-light fw-semibold" onclick="handleTimeAdjustment({{ current_appointment.pk }}, 5)"><i class="bi bi-plus-circle"></i> +5m</button>
-                                <button class="btn btn-outline-light fw-semibold" onclick="handleTimeAdjustment({{ current_appointment.pk }}, 10)"><i class="bi bi-plus-circle"></i> +10m</button>
-                                <button class="btn btn-outline-light fw-semibold" onclick="handleTimeAdjustment({{ current_appointment.pk }}, 15)"><i class="bi bi-plus-circle"></i> +15m</button>
-                                <button class="btn btn-outline-light fw-semibold" onclick="handleTimeAdjustment({{ current_appointment.pk }}, -10)"><i class="bi bi-dash-circle"></i> -10m</button>
-                                <button class="btn btn-outline-light fw-semibold" onclick="handleTimeAdjustment({{ current_appointment.pk }}, -20)"><i class="bi bi-dash-circle"></i> -20m</button>
+                        
+                        <div class="pt-4 border-top border-secondary-subtle">
+                            <h6 class="text-white-50 small mb-3 fw-bold"><i class="bi bi-clock-history text-gold me-1"></i> Ajustar tiempo del turno en curso:</h6>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button class="btn btn-sm btn-outline-secondary px-3" onclick="handleTimeAdjustment({{ current_appointment.pk }}, 5)"><i class="bi bi-plus-circle me-1"></i> +5m</button>
+                                <button class="btn btn-sm btn-outline-secondary px-3" onclick="handleTimeAdjustment({{ current_appointment.pk }}, 10)"><i class="bi bi-plus-circle me-1"></i> +10m</button>
+                                <button class="btn btn-sm btn-outline-secondary px-3" onclick="handleTimeAdjustment({{ current_appointment.pk }}, 15)"><i class="bi bi-plus-circle me-1"></i> +15m</button>
+                                <button class="btn btn-sm btn-outline-secondary px-3" onclick="handleTimeAdjustment({{ current_appointment.pk }}, -10)"><i class="bi bi-dash-circle me-1"></i> -10m</button>
                             </div>
                         </div>
                     </div>
-                    <div class="card-footer text-end">
-                        <button class="btn btn-light" onclick="handleStatusUpdate({{ current_appointment.pk }}, 'COMPLETED')"><i class="bi bi-check-circle-fill"></i> Marcar como completado</button>
-                        <button class="btn btn-warning" onclick="handleStatusUpdate({{ current_appointment.pk }}, 'NO_SHOW')"><i class="bi bi-person-x-fill"></i> Marcar como 'no vino'</button>
+                    <div class="card-footer d-flex justify-content-end gap-2 bg-transparent border-secondary-subtle py-3">
+                        <button class="btn btn-sm btn-success py-2 px-3 fw-bold" onclick="handleStatusUpdate({{ current_appointment.pk }}, 'COMPLETED')"><i class="bi bi-check-circle-fill me-1"></i> Completar</button>
+                        <button class="btn btn-sm btn-outline-danger py-2 px-3 fw-bold" onclick="handleStatusUpdate({{ current_appointment.pk }}, 'NO_SHOW')"><i class="bi bi-person-x-fill me-1"></i> No vino</button>
                     </div>
                 </div>
                 {% else %}
-                <div class="card bg-secondary mb-4">
-                    <div class="card-body text-center">
-                        <p class="h5">No hay ningún cliente en atención en este momento.</p>
+                <div class="card bg-secondary mb-4 shadow text-center py-5">
+                    <div class="card-body">
+                        <i class="bi bi-person-workspace fs-1 text-muted d-block mb-3"></i>
+                        <p class="h5 text-white-50 mb-0">No hay ningún cliente en atención en este momento.</p>
                     </div>
                 </div>
                 {% endif %}
@@ -119,28 +143,38 @@
             <!-- Próximo turno -->
             <div id="next-appointment-section">
                 {% if next_appointment %}
-                <div class="card border-primary mb-4" data-appointment-id="{{ next_appointment.pk }}">
-                    <div class="card-header d-flex justify-content-between bg-transparent">
-                        <h4 class="mb-0 text-primary">Próximo cliente</h4>
-                        <span class="badge bg-primary align-self-center" id="next-badge">
-                            <span id="next-badge-text">Comienza en:</span> <span class="countdown" data-countdown-to="{{ next_appointment.start_time.isoformat }}">--:--</span>
+                <div class="card shadow-lg border-start border-4 border-primary mb-4" data-appointment-id="{{ next_appointment.pk }}" style="background: rgba(59, 130, 246, 0.04);">
+                    <div class="card-header d-flex justify-content-between align-items-center bg-transparent border-secondary-subtle">
+                        <h4 class="mb-0 text-primary fw-bold">Siguiente cita</h4>
+                        <span class="badge bg-primary align-self-center py-2" id="next-badge">
+                            <span id="next-badge-text" class="fw-bold">Comienza en:</span> <span class="countdown fw-bold" data-countdown-to="{{ next_appointment.start_time.isoformat }}">--:--</span>
                         </span>
                     </div>
-                    <div class="card-body">
-                        <h5 class="card-title">
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold text-white mb-3 fs-5">
                             {{ next_appointment.display_client_name }}
                             {% if not next_appointment.client %}
-                            <span class="badge bg-secondary text-light small fs-6 ms-2"><i class="bi bi-shop"></i> Presencial</span>
+                            <span class="badge bg-secondary text-light small fs-6 ms-2"><i class="bi bi-shop me-1"></i> Presencial</span>
                             {% endif %}
                         </h5>
-                        <p class="card-text mb-1"><strong>Servicio:</strong> {{ next_appointment.service.name }}</p>
-                        <p class="card-text mb-1"><strong>Horario:</strong> {{ next_appointment.start_time|time:"H:i" }} - {{ next_appointment.end_time|time:"H:i" }}</p>
+                        
+                        <div class="row g-3">
+                            <div class="col-sm-6">
+                                <p class="card-text text-muted mb-1 small">SERVICIO</p>
+                                <strong class="text-white"><i class="bi bi-scissors text-gold me-1"></i> {{ next_appointment.service.name }}</strong>
+                            </div>
+                            <div class="col-sm-6">
+                                <p class="card-text text-muted mb-1 small">HORARIO</p>
+                                <strong class="text-white"><i class="bi bi-clock text-gold me-1"></i> {{ next_appointment.start_time|time:"H:i" }} - {{ next_appointment.end_time|time:"H:i" }}</strong>
+                            </div>
+                        </div>
+
                         {% if next_appointment.service.hairdresser.mercadopago_active %}
-                        <div class="mt-2">
+                        <div class="mt-4">
                             {% with pay_info=next_appointment.get_payment_status_info %}
-                            <span class="badge {{ pay_info.badge_class }}"><i class="bi {{ pay_info.icon }}"></i> {{ pay_info.label }}</span>
+                            <span class="badge {{ pay_info.badge_class }}"><i class="bi {{ pay_info.icon }} me-1"></i> {{ pay_info.label }}</span>
                             {% if pay_info.detail %}
-                            <small class="text-muted d-block mt-1"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
+                            <small class="text-muted d-block mt-2"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
                             {% endif %}
                             {% endwith %}
                         </div>
@@ -148,9 +182,10 @@
                     </div>
                 </div>
                 {% else %}
-                <div class="card mb-4">
-                    <div class="card-body text-center">
-                        <p class="h5">No hay más turnos programados para hoy.</p>
+                <div class="card mb-4 shadow text-center py-4">
+                    <div class="card-body">
+                        <i class="bi bi-emoji-smile fs-3 text-muted d-block mb-2"></i>
+                        <p class="h5 text-white-50 mb-0">No hay más turnos programados para hoy.</p>
                     </div>
                 </div>
                 {% endif %}
@@ -159,56 +194,57 @@
 
         <!-- Columna secundaria: turnos Pendientes y completados -->
         <div class="col-lg-4">
-            <h4 class="mb-3">Cola de turnos</h4>
-            <div id="upcoming-list" class="list-group mb-4">
+            <h4 class="h5 mb-3 text-gold fw-bold uppercase tracking-wider"><i class="bi bi-list-stars me-1"></i> Cola de espera</h4>
+            <div id="upcoming-list" class="list-group gap-2 mb-5 border-0">
                 {% for app in upcoming_appointments %}
-                    <div class="list-group-item d-flex justify-content-between align-items-start gap-2" data-appointment-id="{{ app.pk }}">
+                    <div class="list-group-item d-flex justify-content-between align-items-start gap-2 rounded border p-3" data-appointment-id="{{ app.pk }}" style="background: rgba(255,255,255,0.01) !important;">
                         <div class="flex-grow-1">
-                            <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.display_client_name }}
+                            <strong class="text-white">{{ app.start_time|time:"H:i" }}</strong> - <span class="text-white-50">{{ app.display_client_name }}</span>
                             {% if not app.client %}
-                            <span class="badge bg-secondary text-light small ms-1" style="font-size: 0.75rem;"><i class="bi bi-shop"></i> Presencial</span>
+                            <span class="badge bg-secondary text-light small ms-1" style="font-size: 0.7rem; padding: 0.25em 0.5em;"><i class="bi bi-shop"></i> Presencial</span>
                             {% endif %}
-                            <small class="d-block text-muted">{{ app.service.name }}</small>
+                            <small class="d-block text-muted mt-1">{{ app.service.name }}</small>
+                            
                             {% if app.status == 'PENDING' and not app.expires_at %}
-                                <span class="badge bg-warning text-dark mt-1"><i class="bi bi-hourglass-split"></i> Pendiente de confirmación</span>
+                                <span class="badge bg-warning text-dark mt-2 d-inline-block"><i class="bi bi-hourglass-split me-1"></i> Pendiente</span>
                             {% endif %}
                             {% if app.service.hairdresser.mercadopago_active %}
                                 {% with pay_info=app.get_payment_status_info %}
                                     {% if pay_info.detail %}
-                                        <small class="text-muted d-block mt-1"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
+                                        <small class="text-muted d-block mt-1.5"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
                                     {% endif %}
                                 {% endwith %}
                             {% endif %}
                         </div>
-                        <div class="text-end d-flex flex-column gap-1">
+                        <div class="text-end d-flex flex-column gap-2">
                             {% if app.status == 'PENDING' and not app.expires_at %}
-                                <button class="btn btn-sm btn-success" onclick="handleStatusUpdate({{ app.pk }}, 'CONFIRMED')" title="Confirmar turno"><i class="bi bi-check-circle"></i> Confirmar</button>
-                                <button class="btn btn-sm btn-outline-danger" onclick="handleStatusUpdate({{ app.pk }}, 'CANCELLED')" title="Rechazar solicitud"><i class="bi bi-x-circle"></i> Rechazar</button>
+                                <button class="btn btn-sm btn-success px-2.5 py-1" onclick="handleStatusUpdate({{ app.pk }}, 'CONFIRMED')" title="Confirmar turno"><i class="bi bi-check-circle"></i></button>
+                                <button class="btn btn-sm btn-outline-danger px-2.5 py-1" onclick="handleStatusUpdate({{ app.pk }}, 'CANCELLED')" title="Rechazar solicitud"><i class="bi bi-x-circle"></i></button>
                             {% else %}
                                 {% if app.service.hairdresser.mercadopago_active %}
                                     {% with pay_info=app.get_payment_status_info %}
-                                        <span class="badge {{ pay_info.badge_class }}"><i class="bi {{ pay_info.icon }}"></i> {{ pay_info.label }}</span>
+                                        <span class="badge {{ pay_info.badge_class }} font-semibold" style="font-size: 0.72rem;">{{ pay_info.label }}</span>
                                     {% endwith %}
                                 {% endif %}
                             {% endif %}
                         </div>
                     </div>
                 {% empty %}
-                    <div class="list-group-item text-muted">No hay más turnos en espera.</div>
+                    <div class="list-group-item text-muted text-center py-4 rounded" style="background: rgba(255,255,255,0.01) !important;">No hay más turnos en espera.</div>
                 {% endfor %}
             </div>
 
-            <h4 class="mb-3">Turnos finalizados hoy</h4>
-            <div id="completed-list" class="list-group">
+            <h4 class="h5 mb-3 text-white fw-bold uppercase tracking-wider"><i class="bi bi-check-circle text-success me-1"></i> Finalizados hoy</h4>
+            <div id="completed-list" class="list-group gap-2 border-0">
                 {% for app in completed_appointments %}
-                    <div class="list-group-item list-group-item-{{ app.status|lower|slice:'-1'|default:'secondary' }} {% if app.status == 'NO_SHOW' %}list-group-item-danger{% elif app.status == 'COMPLETED' %}list-group-item-success{% endif %}" data-appointment-id="{{ app.pk }}">
+                    <div class="list-group-item rounded border p-3" data-appointment-id="{{ app.pk }}" style="background: rgba(255,255,255,0.01) !important;">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                               <strong>{{ app.start_time|time:"H:i" }}</strong> - {{ app.display_client_name }}
+                               <strong class="text-white">{{ app.start_time|time:"H:i" }}</strong> - <span class="text-white-50">{{ app.display_client_name }}</span>
                                {% if not app.client %}
-                               <span class="badge bg-secondary text-light small ms-1" style="font-size: 0.75rem;"><i class="bi bi-shop"></i> Presencial</span>
+                               <span class="badge bg-secondary text-light small ms-1" style="font-size: 0.7rem; padding: 0.25em 0.5em;"><i class="bi bi-shop"></i></span>
                                {% endif %}
-                               <small class="d-block text-muted">{{ app.service.name }}</small>
+                               <small class="d-block text-muted mt-1">{{ app.service.name }}</small>
                                {% if app.service.hairdresser.mercadopago_active %}
                                    {% with pay_info=app.get_payment_status_info %}
                                        {% if pay_info.detail %}
@@ -218,59 +254,70 @@
                                {% endif %}
                             </div>
                             <div class="text-end">
-                               <span class="badge bg-dark mb-1 d-block">{{ app.get_status_display }}</span>
+                               {% if app.status == 'NO_SHOW' %}
+                               <span class="badge bg-danger mb-1 d-block" style="font-size: 0.72rem;">No asistió</span>
+                               {% else %}
+                               <span class="badge bg-primary mb-1 d-block" style="font-size: 0.72rem;">Completado</span>
+                               {% endif %}
+                               
                                {% if app.service.hairdresser.mercadopago_active %}
                                    {% with pay_info=app.get_payment_status_info %}
-                                       <span class="badge {{ pay_info.badge_class }}"><i class="bi {{ pay_info.icon }}"></i> {{ pay_info.label }}</span>
+                                       <span class="badge {{ pay_info.badge_class }}" style="font-size: 0.72rem;">{{ pay_info.label }}</span>
                                    {% endwith %}
                                {% endif %}
                             </div>
                         </div>
                     </div>
                 {% empty %}
-                    <div class="list-group-item text-muted">No hay turnos finalizados hoy.</div>
+                    <div class="list-group-item text-muted text-center py-4 rounded" style="background: rgba(255,255,255,0.01) !important;">No hay turnos finalizados hoy.</div>
                 {% endfor %}
             </div>
         </div>
     </div>
 
+    <!-- Seccion solicitudes pendientes flotante -->
     <div id="pending-requests-section">
         {% if pending_requests_count > 0 %}
         <div class="row mt-4">
             <div class="col-12">
-                <div class="alert alert-warning border-warning d-flex justify-content-between align-items-center shadow-sm mb-0">
+                <div class="alert alert-warning border border-warning-subtle d-flex justify-content-between align-items-center shadow-lg mb-0 p-4 rounded-3" style="background: rgba(245, 158, 11, 0.05); backdrop-filter: blur(8px);">
                     <div class="d-flex align-items-center">
-                        <i class="bi bi-hourglass-split fs-4 me-2 text-warning"></i>
-                        <span>Tienes <strong>{{ pending_requests_count }}</strong> turno{{ pending_requests_count|pluralize }} a confirmar para los próximos días.</span>
+                        <i class="bi bi-bell-fill fs-4 me-3 text-warning animate-bounce"></i>
+                        <span class="text-white">Tienes <strong class="text-warning">{{ pending_requests_count }}</strong> turno{{ pending_requests_count|pluralize }} pendiente{{ pending_requests_count|pluralize }} de confirmación para los próximos días.</span>
                     </div>
-                    <a href="{% url 'owner_appointments' %}?status=PENDING" class="btn btn-warning btn-sm fw-semibold">
-                        Ver y gestionar
+                    <a href="{% url 'owner_appointments' %}?status=PENDING" class="btn btn-warning btn-sm font-semibold text-dark px-3 py-2">
+                        Ver solicitudes
                     </a>
                 </div>
             </div>
         </div>
         {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block modals %}
     <!-- Modal para registrar turno presencial (Walk-in) -->
     <div class="modal fade" id="walkInModal" tabindex="-1" aria-labelledby="walkInModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content bg-dark text-white border-secondary">
+            <div class="modal-content border-secondary">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title" id="walkInModalLabel"><i class="bi bi-shop"></i> Registrar Turno Presencial</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2" id="walkInModalLabel"><i class="bi bi-shop text-gold"></i> Registrar turno presencial</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <form id="walkInForm" method="post" action="{% url 'register_walk_in' %}">
                     {% csrf_token %}
-                    <div class="modal-body">
+                    <div class="modal-body p-4">
                         <div class="alert alert-danger d-none" id="walkInErrorAlert"></div>
                         
                         <div class="mb-3">
-                            <label for="id_client_name" class="form-label">Nombre del cliente</label>
-                            <input type="text" name="client_name" id="id_client_name" class="form-control bg-secondary text-white border-secondary" required placeholder="Ej. Juan Pérez">
+                            <label for="id_client_name" class="form-label fw-semibold text-white">Nombre del cliente</label>
+                            <input type="text" name="client_name" id="id_client_name" class="form-control" required placeholder="Ej. Juan Pérez">
                         </div>
                         
                         <div class="mb-3">
-                            <label for="id_service" class="form-label">Servicio</label>
-                            <select name="service" id="id_service" class="form-select bg-secondary text-white border-secondary" required>
+                            <label for="id_service" class="form-label fw-semibold text-white">Servicio</label>
+                            <select name="service" id="id_service" class="form-select" required>
                                 <option value="">Selecciona un servicio...</option>
                                 {% for service in hairdresser.services.all %}
                                 <option value="{{ service.id }}">{{ service.name }} (${{ service.price }} - {{ service.duration_minutes }} min)</option>
@@ -278,21 +325,21 @@
                             </select>
                         </div>
                         
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="id_date" class="form-label">Fecha</label>
-                                <input type="date" name="date" id="id_date" class="form-control bg-secondary text-white border-secondary" required>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="id_date" class="form-label fw-semibold text-white">Fecha</label>
+                                <input type="date" name="date" id="id_date" class="form-control" required>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="id_start_time_only" class="form-label">Hora de inicio</label>
-                                <input type="time" name="start_time_only" id="id_start_time_only" class="form-control bg-secondary text-white border-secondary" required>
+                            <div class="col-md-6">
+                                <label for="id_start_time_only" class="form-label fw-semibold text-white">Hora de inicio</label>
+                                <input type="time" name="start_time_only" id="id_start_time_only" class="form-control" required>
                             </div>
                         </div>
                     </div>
                     <div class="modal-footer border-secondary">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-outline-secondary text-light" data-bs-dismiss="modal">Cancelar</button>
                         <button type="submit" class="btn btn-primary" id="walkInSubmitBtn">
-                            <i class="bi bi-save"></i> Registrar Turno
+                            <i class="bi bi-save me-1"></i> Registrar turno
                         </button>
                     </div>
                 </form>
@@ -302,50 +349,49 @@
     <!-- Modal para agregar pausa -->
     <div class="modal fade" id="pauseModal" tabindex="-1" aria-labelledby="pauseModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content bg-dark text-white border-secondary">
+            <div class="modal-content border-secondary">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title" id="pauseModalLabel"><i class="bi bi-pause-circle"></i> Agregar Pausa en la Agenda</h5>
+                    <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2" id="pauseModalLabel"><i class="bi bi-pause-circle text-warning"></i> Agregar pausa en la agenda</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <form id="pauseForm" method="post" action="{% url 'add_pause' %}">
                     {% csrf_token %}
-                    <div class="modal-body">
+                    <div class="modal-body p-4">
                         <div class="alert alert-danger d-none" id="pauseErrorAlert"></div>
-                        <p class="text-white-50 small mb-3">Introducir una pausa retrasará en cascada la hora de inicio de todos los turnos restantes programados para hoy.</p>
+                        <p class="text-white-50 small mb-4">Introducir una pausa retrasará en cascada la hora de inicio de todos los turnos restantes programados para hoy.</p>
                         
                         <div class="mb-3">
-                            <label class="form-label">Duración de la pausa</label>
+                            <label class="form-label fw-semibold text-white mb-2">Duración de la pausa</label>
                             <div class="row g-2 mb-3">
                                 <div class="col-3">
-                                    <button type="button" class="btn btn-outline-secondary w-100 py-2 btn-pause-preset" data-minutes="15">15m</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary w-100 py-2 btn-pause-preset" data-minutes="15">15m</button>
                                 </div>
                                 <div class="col-3">
-                                    <button type="button" class="btn btn-outline-secondary w-100 py-2 btn-pause-preset" data-minutes="30">30m</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary w-100 py-2 btn-pause-preset" data-minutes="30">30m</button>
                                 </div>
                                 <div class="col-3">
-                                    <button type="button" class="btn btn-outline-secondary w-100 py-2 btn-pause-preset" data-minutes="45">45m</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary w-100 py-2 btn-pause-preset" data-minutes="45">45m</button>
                                 </div>
                                 <div class="col-3">
-                                    <button type="button" class="btn btn-outline-secondary w-100 py-2 btn-pause-preset" data-minutes="60">60m</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary w-100 py-2 btn-pause-preset" data-minutes="60">60m</button>
                                 </div>
                             </div>
                             <div class="input-group">
-                                <span class="input-group-text bg-secondary text-white border-secondary">Minutos personalizados</span>
-                                <input type="number" name="minutes" id="id_pause_minutes" min="1" class="form-control bg-secondary text-white border-secondary" required placeholder="Ej. 20">
+                                <span class="input-group-text">Minutos personalizados</span>
+                                <input type="number" name="minutes" id="id_pause_minutes" min="1" class="form-control" required placeholder="Ej. 20">
                             </div>
                         </div>
                     </div>
                     <div class="modal-footer border-secondary">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                        <button type="submit" class="btn btn-warning text-dark fw-semibold" id="pauseSubmitBtn">
-                            <i class="bi bi-clock-fill"></i> Aplicar Pausa
+                        <button type="button" class="btn btn-outline-secondary text-light" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-warning text-dark fw-bold" id="pauseSubmitBtn">
+                            <i class="bi bi-clock-fill me-1"></i> Aplicar pausa
                         </button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-</div>
 {% endblock %}
 
 {% block extra_scripts %}

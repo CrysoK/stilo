@@ -1,28 +1,61 @@
 {% load static %}
 <div class="modal fade" id="appointmentModal" tabindex="-1" aria-labelledby="appointmentModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="appointmentModalLabel">Confirmar Turno</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+    <div class="modal-content shadow-lg border border-secondary-subtle bg-secondary">
+      <div class="modal-header border-bottom border-secondary">
+        <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2" id="appointmentModalLabel">
+          <i class="bi bi-calendar2-check text-gold"></i> Confirmar cita
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
-        <p><strong>Servicio:</strong> <span id="modalServiceName"></span></p>
-        <p><strong>Fecha y Hora:</strong> <span id="modalDateTime"></span></p>
-        <hr>
-        <p class="mb-1"><strong>Duración:</strong> <span id="modalServiceDuration"></span> minutos</p>
-        <p><strong>Precio:</strong> $<span id="modalServicePrice"></span></p>
+      <div class="modal-body p-4">
+        <div class="d-flex flex-column gap-3 mb-4">
+          <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-dark p-2 text-gold d-flex align-items-center justify-content-center" style="width: 42px; height: 42px;">
+              <i class="bi bi-scissors fs-5"></i>
+            </div>
+            <div>
+              <small class="text-muted d-block uppercase tracking-wider font-semibold" style="font-size: 0.72rem;">SERVICIO SELECCIONADO</small>
+              <span id="modalServiceName" class="fw-bold text-white fs-5"></span>
+            </div>
+          </div>
+
+          <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-dark p-2 text-gold d-flex align-items-center justify-content-center" style="width: 42px; height: 42px;">
+              <i class="bi bi-calendar3 fs-5"></i>
+            </div>
+            <div>
+              <small class="text-muted d-block uppercase tracking-wider font-semibold" style="font-size: 0.72rem;">FECHA Y HORA</small>
+              <span id="modalDateTime" class="fw-bold text-white fs-5"></span>
+            </div>
+          </div>
+
+          <div class="row mt-2 g-2">
+            <div class="col-6">
+              <div class="bg-dark p-3 rounded-3 text-center border border-secondary-subtle">
+                <small class="text-muted d-block mb-1">DURACIÓN</small>
+                <strong class="text-white fs-5"><span id="modalServiceDuration"></span>m</strong>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="bg-dark p-3 rounded-3 text-center border border-secondary-subtle">
+                <small class="text-muted d-block mb-1">TOTAL A PAGAR</small>
+                <strong class="text-gold fs-5">$<span id="modalServicePrice"></span></strong>
+              </div>
+            </div>
+          </div>
+        </div>
         
         <div id="form-errors" class="alert alert-danger d-none mt-3"></div>
 
         <div id="payment-options-container" class="mt-3">
-          <label class="form-label fw-bold mb-2">Selecciona la modalidad de pago</label>
-          <div class="list-group" id="payment-options-list">
+          <label class="form-label fw-bold mb-3 text-white"><i class="bi bi-wallet2 me-2 text-gold"></i>Método de pago</label>
+          <div class="list-group gap-2" id="payment-options-list">
             <!-- Se poblará dinámicamente con JS -->
           </div>
-          <div class="d-flex align-items-center justify-content-center gap-2 mt-3 pt-2 border-top text-muted small">
-            <i class="bi bi-shield-check text-success"></i> Pago 100% seguro procesado por 
-            <img src="{% static 'img/mp.svg' %}" alt="Mercado Pago" style="height: 30px;">
+          <div class="d-flex align-items-center justify-content-center gap-2 mt-4 pt-3 border-top border-secondary text-muted small">
+            <i class="bi bi-shield-check text-success fs-5"></i> Pago 100% seguro procesado por 
+            <img src="{% static 'img/mp.svg' %}" alt="Mercado Pago" style="height: 24px;">
           </div>
         </div>
 
@@ -33,9 +66,9 @@
           {{ form.payment_method }}
         </form>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-primary" id="confirmAppointmentBtn">Reservar</button>
+      <div class="modal-footer border-top border-secondary">
+        <button type="button" class="btn btn-outline-secondary text-light px-3" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary px-4" id="confirmAppointmentBtn">Confirmar reserva</button>
       </div>
     </div>
   </div>

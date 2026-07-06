@@ -75,13 +75,13 @@
 {% endblock %}
 
 {% block content %}
-<div class="container py-4">
+<div class="container py-4 animate-fade-in">
   <div class="row">
     <div class="col-lg-4 mb-4">
       <!-- Inicio carousel -->
       {% if ordered_images %}
-      <div id="hairdresserCarousel" class="carousel slide mb-4 shadow-sm" data-bs-ride="carousel">
-        <div class="carousel-inner rounded">
+      <div id="hairdresserCarousel" class="carousel slide mb-4 shadow-lg rounded-3 overflow-hidden border border-secondary-subtle" data-bs-ride="carousel">
+        <div class="carousel-inner">
           {% for image in ordered_images %}
           <div class="carousel-item {% if forloop.first %}active{% endif %}">
             <img src="{{ image.image.url }}" class="d-block w-100 carousel-image-responsive" alt="{{ image.caption|default:hairdresser.name }}">
@@ -98,44 +98,50 @@
         </button>
       </div>
       {% else %}
-      <img src="{% static 'img/default.jpg' %}" class="d-block w-100 rounded mb-4 shadow-sm carousel-image-responsive" alt="{{ hairdresser.name }}">
+      <div class="shadow-lg rounded-3 overflow-hidden border border-secondary-subtle mb-4">
+        <img src="{% static 'img/default.jpg' %}" class="d-block w-100 carousel-image-responsive" alt="{{ hairdresser.name }}">
+      </div>
       {% endif %}
       <!-- Fin carousel -->
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h1 class="card-title h2 mb-3">{{ hairdresser.name }}</h1>
-          <div class="mb-2">
+      
+      <!-- Detalle Peluqueria -->
+      <div class="card mb-4 shadow-lg">
+        <div class="card-body p-4">
+          <h1 class="h3 fw-bold text-white mb-3">{{ hairdresser.name }}</h1>
+          <div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
             {% if hairdresser.review_count > 0 %}
             {% with avg_rating=hairdresser.average_rating %}
-              <span class="h5 align-middle">{{ avg_rating|floatformat:1 }}</span>
-              {% for i in "12345" %}
-                  {% if avg_rating >= i|add:0 %}
-                      <i class="bi bi-star-fill text-warning"></i>
-                  {% elif avg_rating > i|add:"-0.5" %}
-                      <i class="bi bi-star-half text-warning"></i>
-                  {% else %}
-                      <i class="bi bi-star text-warning"></i>
-                  {% endif %}
-              {% endfor %}
-              <span class="text-muted">({{ hairdresser.review_count }} reseñas)</span>
+              <div class="d-flex align-items-center text-warning gap-1">
+                {% for i in "12345" %}
+                    {% if avg_rating >= i|add:0 %}
+                        <i class="bi bi-star-fill"></i>
+                    {% elif avg_rating > i|add:"-0.5" %}
+                        <i class="bi bi-star-half"></i>
+                    {% else %}
+                        <i class="bi bi-star"></i>
+                    {% endif %}
+                {% endfor %}
+              </div>
+              <span class="fw-bold text-white-50 small">({{ avg_rating|floatformat:1 }} - {{ hairdresser.review_count }} reseñas)</span>
             {% endwith %}
             {% else %}
-            <span class="text-muted">Sin reseñas</span>
+            <span class="text-muted small"><i class="bi bi-star me-1"></i>Sin opiniones</span>
             {% endif %}
           </div>
-          <p class="lead text-primary mb-2">
-            <i class="bi bi-geo-alt-fill"></i> {{ hairdresser.address }}
+          <p class="text-gold mb-3 small fw-semibold">
+            <i class="bi bi-geo-alt-fill me-1"></i> {{ hairdresser.address }}
           </p>
-          <p class="card-text">{{ hairdresser.description|default:"No hay descripción disponible." }}</p>
+          <p class="card-text text-white-50 small">{{ hairdresser.description|default:"No hay descripción disponible." }}</p>
         </div>
       </div>
 
-      <div class="card shadow-sm mt-4">
-        <div class="card-body">
-          <h3 class="h4 card-title mb-3">1. Selecciona un servicio</h3>
-          <div class="list-group" id="service-list">
+      <!-- Paso 1: Servicios -->
+      <div class="card shadow-lg">
+        <div class="card-body p-4">
+          <h3 class="h5 fw-bold text-gold mb-3"><i class="bi bi-check2-circle me-1"></i> 1. Elige un servicio</h3>
+          <div class="list-group gap-2 border-0" id="service-list">
             {% for service in services %}
-            <a href="#" class="list-group-item list-group-item-action service-item"
+            <a href="#" class="list-group-item list-group-item-action service-item rounded border p-3"
                data-service-id="{{ service.pk }}"
                data-service-name="{{ service.name }}"
                data-service-duration="{{ service.duration_minutes }}"
@@ -143,26 +149,27 @@
                data-requires-deposit="{{ service.hairdresser.requires_deposit|yesno:'true,false' }}"
                data-deposit-amount="{{ service.required_deposit_amount|floatformat:2 }}"
                data-allow-prepayment="{{ service.payment_modes.allow_prepayment|yesno:'true,false' }}"
-               data-allow-on-site-payment="{{ service.payment_modes.allow_on_site_payment|yesno:'true,false' }}">
+               data-allow-on-site-payment="{{ service.payment_modes.allow_on_site_payment|yesno:'true,false' }}"
+               style="background: rgba(255,255,255,0.01) !important;">
               <div class="d-flex w-100 justify-content-between align-items-center">
                 <div>
-                  <h6 class="mb-1">{{ service.name }}</h6>
+                  <h6 class="mb-1 fw-bold text-white">{{ service.name }}</h6>
                   {% with service_rating=service.average_rating service_review_count=service.review_count %}
                     {% if service_review_count > 0 %}
-                    <small class="text-muted d-block">
+                    <small class="text-warning d-block mb-1">
                         {% include 'includes/star_rating.html' with rating=service_rating %}
-                        ({{ service_review_count }})
+                        <span class="text-muted small">({{ service_review_count }})</span>
                     </small>
                     {% endif %}
                   {% endwith %}
-                  <small class="text-muted">{{ service.duration_minutes }} minutos</small>
+                  <small class="text-muted d-flex align-items-center gap-1"><i class="bi bi-clock"></i> {{ service.duration_minutes }} min</small>
                 </div>
-                <span class="badge bg-primary rounded-pill">${{ service.price }}</span>
+                <span class="badge bg-primary fs-6 fw-bold">${{ service.price|floatformat:0 }}</span>
               </div>
             </a>
             {% empty %}
-            <div class="list-group-item text-center text-muted">
-              Esta peluquería aún no ha cargado servicios.
+            <div class="list-group-item text-center text-muted py-4">
+              <i class="bi bi-slash-circle fs-3 d-block mb-2"></i> Esta peluquería aún no tiene servicios.
             </div>
             {% endfor %}
           </div>
@@ -170,63 +177,78 @@
       </div>
     </div>
 
+    <!-- Paso 2: Calendario y Reseñas -->
     <div class="col-lg-8">
-      <div class="card shadow-sm mb-4">
-        <div class="card-body">
-          <h4 class="card-title mb-3">2. Selecciona un horario</h4>
+      <div class="card shadow-lg mb-4">
+        <div class="card-body p-4">
+          <h4 class="h5 fw-bold text-gold mb-3"><i class="bi bi-calendar-check me-1"></i> 2. Selecciona un horario</h4>
           {% if user.is_authenticated and not user.is_owner %}
           <div class="position-relative">
-            <div id='calendar' class="mb-2"></div>
+            <div id='calendar' class="mb-3"></div>
           </div>
-          <p class="text-muted small">
-            <i class="bi bi-info-circle"></i> Haz clic en un horario libre para reservar.
+          <p class="text-muted small mb-0 d-flex align-items-center gap-1">
+            <i class="bi bi-info-circle-fill text-gold"></i> Haz clic en un casillero vacío del calendario para reservar.
           </p>
           {% elif user.is_authenticated and user.is_owner %}
-          <div class="alert alert-info">
-            <i class="bi bi-info-circle"></i> Los dueños no pueden reservar turnos.
+          <div class="alert alert-info border-0 bg-info bg-opacity-10 text-info d-flex align-items-center gap-2 mb-0">
+            <i class="bi bi-info-circle-fill fs-5"></i>
+            <span>Los dueños no pueden reservar turnos en su propio local.</span>
           </div>
           {% else %}
-          <div class="alert alert-warning">
-            <i class="bi bi-exclamation-triangle"></i>
-            <a href="{% url 'login' %}?next={{ request.path }}" class="alert-link">Inicia sesión como cliente</a>
-            para ver el calendario y reservar.
+          <div class="alert alert-warning border-0 bg-warning bg-opacity-10 text-warning d-flex align-items-center justify-content-between flex-wrap gap-2 mb-0">
+            <span class="d-flex align-items-center gap-2">
+              <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+              <span>Debes iniciar sesión para ver los horarios disponibles y reservar.</span>
+            </span>
+            <a href="{% url 'login' %}?next={{ request.path }}" class="btn btn-sm btn-warning font-semibold text-dark">Iniciar sesión</a>
           </div>
           {% endif %}
         </div>
       </div>
+
       <!-- Reseñas -->
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h4 class="card-title mb-3">Opiniones de clientes</h4>
-          {% for review in reviews %}
-            <div class="d-flex mb-3">
-              <div class="flex-shrink-0"><i class="bi bi-person-circle fs-2"></i></div>
-              <div class="ms-3 flex-grow-1">
-                <strong>{{ review.appointment.client.first_name }} {{ review.appointment.client.last_name|first }}.</strong>
-                <div class="mb-1">
-                  {% for i in "12345" %}
-                    {% if i|add:0 <= review.rating %}
-                      <i class="bi bi-star-fill text-warning"></i>
-                    {% else %}
-                      <i class="bi bi-star text-warning"></i>
-                    {% endif %}
-                  {% endfor %}
-                  <span class="text-muted small fst-italic">({{ review.appointment.service.name }})</span>
+      <div class="card shadow-lg">
+        <div class="card-body p-4">
+          <h4 class="h5 fw-bold text-white mb-4"><i class="bi bi-chat-left-heart me-1 text-gold"></i> Opiniones de clientes</h4>
+          <div class="d-flex flex-column gap-3">
+            {% for review in reviews %}
+              <div class="review-card">
+                <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+                  <div class="d-flex align-items-center">
+                    <div class="rounded-circle bg-secondary p-2 d-flex align-items-center justify-content-center me-3 text-gold" style="width: 40px; height: 40px;">
+                      <i class="bi bi-person-fill fs-5"></i>
+                    </div>
+                    <div>
+                      <strong class="text-white d-block">{{ review.appointment.client.first_name }} {{ review.appointment.client.last_name|first }}.</strong>
+                      <small class="text-muted">{{ review.created_at|date:"d M, Y" }}</small>
+                    </div>
+                  </div>
+                  <div class="text-end">
+                    <div class="text-warning mb-1">
+                      {% for i in "12345" %}
+                        {% if i|add:0 <= review.rating %}
+                          <i class="bi bi-star-fill"></i>
+                        {% else %}
+                          <i class="bi bi-star"></i>
+                        {% endif %}
+                      {% endfor %}
+                    </div>
+                    <span class="badge bg-secondary text-white-50" style="font-size: 0.72rem;">{{ review.appointment.service.name }}</span>
+                  </div>
                 </div>
-                <p>{{ review.comment }}</p>
-                <small class="text-muted">{{ review.created_at|date:"d M, Y" }}</small>
+                <p class="text-white-50 mb-0 italic" style="font-style: italic;">"{{ review.comment }}"</p>
               </div>
-            </div>
-            {% if not forloop.last %}<hr>{% endif %}
-          {% empty %}
-            <p class="text-muted">Esta peluquería todavía no tiene reseñas.</p>
-          {% endfor %}
+            {% empty %}
+              <p class="text-muted text-center py-4 mb-0"><i class="bi bi-chat-square-dots fs-3 d-block mb-2"></i> Esta peluquería todavía no tiene reseñas escritas.</p>
+            {% endfor %}
+          </div>
         </div>
       </div>
 
     </div>
   </div>
 </div>
+
 
 <!-- Modal Interceptor (Friendly Nudge) -->
 <div class="modal fade" id="nudgeModal" tabindex="-1" aria-labelledby="nudgeModalLabel" aria-hidden="true">

@@ -5,7 +5,7 @@
 <!-- Leaflet CDN -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-  /* https://dev.to/deepakdevanand/leaflet-map-dark-theme-5ej0 */
+  /* Leaflet Dark Theme Filter */
   .leaflet-layer,
   .leaflet-control-zoom-in,
   .leaflet-control-zoom-out,
@@ -13,10 +13,29 @@
     filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
   }
   .leaflet-container {
-    background: #000
+    background: #000;
   }
   .carousel-caption {
     color: #fff !important;
+    background: linear-gradient(0deg, rgba(9, 13, 22, 0.9) 0%, rgba(9, 13, 22, 0) 100%);
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 3rem 2rem 2rem 2rem !important;
+  }
+  .carousel-item {
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .search-filter-card {
+    background: rgba(17, 24, 39, 0.4) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+  }
+  .text-gold {
+    color: var(--accent-gold);
   }
 </style>
 {% endblock %}
@@ -24,8 +43,8 @@
 {% block content %}
 
 {% if featured_hairdressers %}
-<div class="container">
-  <div id="heroCarousel" class="carousel slide mb-5" data-bs-ride="carousel">
+<div class="container mb-5 animate-fade-in">
+  <div id="heroCarousel" class="carousel slide shadow-lg" data-bs-ride="carousel">
     <div class="carousel-indicators">
       {% for hairdresser in featured_hairdressers %}
       <button type="button" data-bs-target="#heroCarousel" data-bs-slide-to="{{ forloop.counter0 }}"
@@ -39,13 +58,20 @@
         {% with hairdresser.cover_image|default:hairdresser.images.first as img %}
         {% if img %}
         <img src="{{ img.image.url }}" class="d-block w-100"
-          style="object-fit: cover; height: 400px; filter: brightness(0.4);" alt="{{ hairdresser.name }}">
+          style="object-fit: cover; height: 380px; filter: brightness(0.35);" alt="{{ hairdresser.name }}">
+        {% else %}
+        <img src="{% static 'img/default.jpg' %}" class="d-block w-100"
+          style="object-fit: cover; height: 380px; filter: brightness(0.35);" alt="{{ hairdresser.name }}">
         {% endif %}
         {% endwith %}
-        <div class="carousel-caption d-md-block text-start">
-          <h1 class="display-4">{{ hairdresser.name }}</h1>
-          <p class="lead">{{ hairdresser.description|truncatewords:20 }}</p>
-          <p><a class="btn btn-lg btn-primary" href="{% url 'hairdresser_detail' hairdresser.pk %}">Ver y Reservar</a>
+        <div class="carousel-caption text-start">
+          <span class="badge bg-warning text-dark mb-2"><i class="bi bi-star-fill me-1"></i>Recomendado</span>
+          <h1 class="display-5 fw-bold text-white mb-2">{{ hairdresser.name }}</h1>
+          <p class="lead text-white-50 mb-3">{{ hairdresser.description|truncatewords:20 }}</p>
+          <p class="mb-0">
+            <a class="btn btn-primary px-4 py-2" href="{% url 'hairdresser_detail' hairdresser.pk %}">
+              <i class="bi bi-calendar-check me-2"></i>Ver y reservar
+            </a>
           </p>
         </div>
       </div>
@@ -63,24 +89,24 @@
 </div>
 {% endif %}
 
-<div class="container">
+<div class="container animate-fade-in">
   <!-- Buscador y filtros -->
-  <div class="card border-0 shadow-sm mb-4 bg-body-tertiary">
-    <div class="card-body p-3 p-md-4">
-      <h5 class="card-title mb-3 d-flex align-items-center text-primary">
-        <i class="bi bi-search me-2"></i> Buscar y filtrar peluquerías
+  <div class="card search-filter-card mb-5">
+    <div class="card-body p-4">
+      <h5 class="card-title mb-4 d-flex align-items-center text-gold fw-bold">
+        <i class="bi bi-sliders2 me-2"></i> Buscar y filtrar peluquerías
       </h5>
       <form method="GET" action="{% url 'home' %}" id="search-filter-form" class="row g-3">
         <div class="col-md-6 col-lg-5">
           <div class="input-group">
-            <span class="input-group-text bg-dark-subtle border-secondary-subtle text-muted"><i class="bi bi-shop"></i></span>
-            <input type="text" name="q" class="form-control border-secondary-subtle bg-dark-subtle" placeholder="Buscar por nombre, dirección o descripción..." value="{{ request.GET.q|default:'' }}">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" name="q" class="form-control" placeholder="Buscar por nombre, dirección o descripción..." value="{{ request.GET.q|default:'' }}">
           </div>
         </div>
         <div class="col-md-4 col-lg-4">
           <div class="input-group">
-            <span class="input-group-text bg-dark-subtle border-secondary-subtle text-muted"><i class="bi bi-scissors"></i></span>
-            <select name="service" class="form-select border-secondary-subtle bg-dark-subtle">
+            <span class="input-group-text"><i class="bi bi-scissors"></i></span>
+            <select name="service" class="form-select">
               <option value="">Todos los servicios</option>
               <option value="corte" {% if request.GET.service == 'corte' %}selected{% endif %}>Corte</option>
               <option value="color" {% if request.GET.service == 'color' %}selected{% endif %}>Color / Tintura / Mechas</option>
@@ -91,64 +117,90 @@
           </div>
         </div>
         <div class="col-md-2 col-lg-3 d-flex gap-2">
-          <button type="submit" class="btn btn-primary flex-grow-1"><i class="bi bi-funnel-fill"></i> Filtrar</button>
+          <button type="submit" class="btn btn-primary flex-grow-1"><i class="bi bi-funnel-fill me-1"></i> Filtrar</button>
           {% if request.GET.q or request.GET.service %}
-          <a href="{% url 'home' %}" class="btn btn-outline-secondary"><i class="bi bi-trash-fill"></i> Limpiar</a>
+          <a href="{% url 'home' %}" class="btn btn-outline-secondary"><i class="bi bi-trash3-fill"></i></a>
           {% endif %}
         </div>
       </form>
     </div>
   </div>
 
-  <h2 class="pb-2 border-bottom">Mapa de Peluquerías</h2>
-  <div class="position-relative">
-    <div id="map" style="height: 400px; width: 100%;" class="mb-4"></div>
-    <button id="recenterButton" class="btn btn-primary position-absolute"
-      style="bottom: 20px; right: 10px; z-index: 1000;">
-      <i class="bi bi-geo-alt-fill"></i> Mi ubicación
-    </button>
+  <!-- Sección Mapa -->
+  <div class="mb-5">
+    <h3 class="h4 mb-4 text-uppercase tracking-wider fw-bold text-gold">
+      <i class="bi bi-map-fill me-2"></i>Mapa de peluquerías
+    </h3>
+    <div class="position-relative shadow-lg rounded-3 overflow-hidden border border-secondary-subtle">
+      <div id="map" style="height: 380px; width: 100%;"></div>
+      <button id="recenterButton" class="btn btn-sm btn-outline-primary position-absolute"
+        style="bottom: 20px; right: 20px; z-index: 1000; background: var(--bg-secondary);">
+        <i class="bi bi-geo-alt-fill me-1"></i> Mi ubicación
+      </button>
+    </div>
   </div>
 
-  <h2 class="pb-2 border-bottom">Todas las Peluquerías</h2>
-  <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4 mt-3">
-    {% for hairdresser in hairdressers %}
-    <div class="col">
-      <div class="card h-100">
-        <!-- Placeholder de imagen -->
-        {% with hairdresser.cover_image|default:hairdresser.images.first as img %}
-        {% if img %}
-        <img src="{{ img.image.url }}" class="card-img-top" alt="{{ hairdresser.name }}"
-          style="object-fit: cover; height: 180px;">
-        {% else %}
-        <img src="{% static 'img/default.jpg' %}" class="card-img-top" alt="{{ hairdresser.name }}" style="object-fit: cover; height: 180px;">
-        {% endif %}
-        {% endwith %}
-        <div class="card-body">
-          <h5 class="card-title">{{ hairdresser.name }}</h5>
-          <p class="card-text">{{ hairdresser.address }}</p>
-          <a href="{% url 'hairdresser_detail' hairdresser.pk %}" class="btn btn-primary">Ver Servicios y Reservar</a>
+  <!-- Listado Peluquerías -->
+  <div class="mb-5">
+    <h3 class="h4 mb-4 text-uppercase tracking-wider fw-bold text-gold">
+      <i class="bi bi-shop me-2"></i>Nuestras peluquerías
+    </h3>
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+      {% for hairdresser in hairdressers %}
+      <div class="col">
+        <div class="card h-100 hairdresser-card">
+          <!-- Contenedor Imagen con Badge de Rating -->
+          <div class="position-relative overflow-hidden" style="height: 190px;">
+            {% with hairdresser.cover_image|default:hairdresser.images.first as img %}
+            {% if img %}
+            <img src="{{ img.image.url }}" class="card-img-top w-100 h-100" alt="{{ hairdresser.name }}"
+              style="object-fit: cover;">
+            {% else %}
+            <img src="{% static 'img/default.jpg' %}" class="card-img-top w-100 h-100" alt="{{ hairdresser.name }}" 
+              style="object-fit: cover;">
+            {% endif %}
+            {% endwith %}
+            <div class="position-absolute top-0 end-0 p-3">
+              {% if hairdresser.review_count > 0 %}
+                <span class="badge d-flex align-items-center gap-1 shadow-lg text-warning" style="font-size: 0.825rem; background: #090d16; border: 1.5px solid rgba(229, 193, 88, 0.4) !important; padding: 0.5rem 0.8rem;">
+                  <i class="bi bi-star-fill text-gold"></i> {{ hairdresser.average_rating|floatformat:1 }}
+                </span>
+              {% else %}
+                <span class="badge d-flex align-items-center gap-1 shadow-lg text-white" style="font-size: 0.825rem; background: #090d16; border: 1.5px solid rgba(255, 255, 255, 0.15) !important; padding: 0.5rem 0.8rem; font-weight: 600;">
+                  Nuevo
+                </span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="card-body d-flex flex-column p-4">
+            <h5 class="card-title fw-bold text-white mb-2">{{ hairdresser.name }}</h5>
+            <p class="card-text text-muted mb-4 small"><i class="bi bi-geo-alt-fill text-gold me-1"></i>{{ hairdresser.address }}</p>
+            <a href="{% url 'hairdresser_detail' hairdresser.pk %}" class="btn btn-outline-primary w-100 mt-auto">
+              <i class="bi bi-calendar2-week me-2"></i>Ver y reservar
+            </a>
+          </div>
         </div>
       </div>
-    </div>
-    {% empty %}
-    <div class="col-12 py-5 text-center">
-      <div class="text-muted mb-3">
-        <i class="bi bi-search-heart" style="font-size: 3rem;"></i>
+      {% empty %}
+      <div class="col-12 py-5 text-center search-filter-card">
+        <div class="text-muted mb-3">
+          <i class="bi bi-search-heart" style="font-size: 3rem; color: var(--accent-gold);"></i>
+        </div>
+        {% if request.GET.q or request.GET.service %}
+          <h5 class="fw-bold text-white">No se encontraron peluquerías</h5>
+          <p class="text-muted">No hay resultados para los filtros seleccionados. Intenta con otros términos.</p>
+          <a href="{% url 'home' %}" class="btn btn-primary mt-2"><i class="bi bi-arrow-left-circle me-1"></i> Ver todas las peluquerías</a>
+        {% else %}
+          <h5 class="fw-bold text-white">No hay peluquerías registradas</h5>
+          <p class="text-muted">Por el momento no hay peluquerías activas en el sistema.</p>
+        {% endif %}
       </div>
-      {% if request.GET.q or request.GET.service %}
-        <h5>No se encontraron peluquerías</h5>
-        <p class="text-muted">No hay resultados para los filtros seleccionados. Intenta con otros términos.</p>
-        <a href="{% url 'home' %}" class="btn btn-primary mt-2"><i class="bi bi-arrow-left-circle me-1"></i> Ver todas las peluquerías</a>
-      {% else %}
-        <h5>No hay peluquerías registradas</h5>
-        <p class="text-muted">Por el momento no hay peluquerías activas en el sistema.</p>
-      {% endif %}
+      {% endfor %}
     </div>
-    {% endfor %}
   </div>
 </div>
-
 {% endblock %}
+
 {% block extra_scripts %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>

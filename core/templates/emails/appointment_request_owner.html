@@ -1,7 +1,7 @@
 {% extends "emails/base_email.html" %}
 
 {% block content %}
-<h2>¡Nueva Solicitud de Turno!</h2>
+<h2>¡Nueva solicitud de turno!</h2>
 <p>Hola, {{ appointment.service.hairdresser.owner.first_name }}:</p>
 <p>Un cliente ha solicitado un turno en <strong>{{ appointment.service.hairdresser.name }}</strong>. Está esperando tu confirmación. Los detalles son:</p>
 
@@ -35,7 +35,7 @@
 <p>Podés confirmar o gestionar este turno desde tu <strong>estación de trabajo</strong> en Stilo.</p>
 
 <div style="text-align: center;">
-    <a href="{{ workstation_url }}" class="btn" style="background-color: #1a1a1a; color: #d4af37 !important; border-color: #d4af37;">Ir a la workstation</a>
+    <a href="{{ workstation_url }}" class="btn" style="background-color: #1a1a1a; color: #d4af37 !important; border-color: #d4af37;">Ir al panel de hoy</a>
 </div>
 
 <p>Atentamente,<br>El equipo de Stilo</p>

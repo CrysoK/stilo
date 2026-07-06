@@ -1,7 +1,7 @@
 {% extends "emails/base_email.html" %}
 
 {% block content %}
-<h2>¡Solicitud Recibida!</h2>
+<h2>¡Solicitud recibida!</h2>
 <p>Hola, {{ appointment.client.first_name }}:</p>
 <p>Tu solicitud de turno ha sido recibida con éxito. Ahora queda pendiente de confirmación por parte del local. Te avisaremos por aquí cuando esté confirmada.</p>
 
@@ -42,7 +42,7 @@
     {% endif %}
 </div>
 
-<p>Podés ver el estado de tu solicitud en cualquier momento desde la sección <strong>Mis Turnos</strong> en Stilo.</p>
+<p>Podés ver el estado de tu solicitud en cualquier momento desde la sección <strong>Mis turnos</strong> en Stilo.</p>
 
 <div style="text-align: center;">
     <a href="{{ my_appointments_url }}" class="btn" style="background-color: #1a1a1a; color: #d4af37 !important; border-color: #d4af37;">Ver mis turnos</a>

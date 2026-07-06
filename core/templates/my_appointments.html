@@ -33,18 +33,33 @@
 {% endblock %}
 
 {% block content %}
-<h2>Mis turnos reservados</h2>
+<div class="container py-4 animate-fade-in">
+  <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+    <h2 class="mb-0 text-white fw-bold"><i class="bi bi-calendar2-week text-gold me-2"></i>Mis turnos reservados</h2>
+    <a href="{% url 'home' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle me-1"></i> Reservar nuevo</a>
+  </div>
 
-<ul class="list-group mt-3" id="appointments-list">
-  {% for app in appointments %}
-  <li class="list-group-item" data-appointment-id="{{ app.pk }}">
-    <div class="d-flex w-100 justify-content-between">
-        <div>
-            <h5 class="mb-1">{{ app.service.name }}</h5>
-            <p class="mb-1"><strong>En:</strong> {{ app.service.hairdresser.name }}</p>
-            <p class="mb-1"><strong>Fecha:</strong> {{ app.start_time|date:"d/m/Y H:i" }} hs</p>
-            <p class="mb-1"><strong>Precio:</strong> ${{ app.amount }}</p>
-            <div class="d-flex flex-wrap gap-2 align-items-center mt-1">
+  <div class="row g-4" id="appointments-list">
+    {% for app in appointments %}
+    <div class="col-12" data-appointment-id="{{ app.pk }}">
+      <div class="card shadow-lg border-start border-4
+        {% if app.status == 'PENDING' %}border-warning
+        {% elif app.status == 'CONFIRMED' %}border-success
+        {% elif app.status == 'COMPLETED' %}border-primary
+        {% elif app.status == 'CANCELLED' %}border-danger
+        {% else %}border-secondary{% endif %}" style="background: var(--gradient-card);">
+        <div class="card-body p-4">
+          <div class="row align-items-center g-3">
+            <div class="col-md-5">
+              <h5 class="fw-bold text-white mb-2">{{ app.service.name }}</h5>
+              <p class="mb-1 text-muted small"><i class="bi bi-shop text-gold me-1"></i> <strong>Local:</strong> {{ app.service.hairdresser.name }}</p>
+              <p class="mb-1 text-muted small"><i class="bi bi-geo-alt text-gold me-1"></i> <strong>Dirección:</strong> {{ app.service.hairdresser.address }}</p>
+            </div>
+            <div class="col-md-4">
+              <p class="mb-1 text-muted small"><i class="bi bi-calendar3 text-gold me-1"></i> <strong>Fecha:</strong> {{ app.start_time|date:"d/m/Y H:i" }} hs</p>
+              <p class="mb-1 text-muted small"><i class="bi bi-cash-stack text-gold me-1"></i> <strong>Precio:</strong> ${{ app.amount }}</p>
+              
+              <div class="d-flex flex-wrap gap-2 mt-2">
                 {% if app.status == 'PENDING' %}
                   <span class="badge bg-warning text-dark"><i class="bi bi-clock-fill"></i> Pendiente</span>
                 {% elif app.status == 'CONFIRMED' %}
@@ -54,64 +69,77 @@
                 {% elif app.status == 'CANCELLED' %}
                   <span class="badge bg-danger"><i class="bi bi-x-circle-fill"></i> Cancelado</span>
                 {% elif app.status == 'NO_SHOW' %}
-                  <span class="badge bg-dark"><i class="bi bi-person-x-fill"></i> No se presentó</span>
+                  <span class="badge bg-dark"><i class="bi bi-person-x-fill"></i> Ausente</span>
                 {% endif %}
                 {% with pay_info=app.get_payment_status_info %}
                   <span class="badge {{ pay_info.badge_class }}"><i class="bi {{ pay_info.icon }}"></i> {{ pay_info.label }}</span>
                 {% endwith %}
-            </div>
-            {% with pay_info=app.get_payment_status_info %}
-              {% if pay_info.detail %}
-                <small class="text-muted d-block mt-1"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
-              {% endif %}
-            {% endwith %}
-        </div>
-        <div class="text-end d-flex flex-column align-items-end justify-content-between" style="min-height: 80px;">
-            <div id="review-controls-{{ app.pk }}">
-                {% if app.status == 'COMPLETED' %}
-                    {% if not app.review %}
-                        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#reviewFormModal"
-                                data-mode="create" data-appointment-pk="{{ app.pk }}">
-                            Dejar reseña
-                        </button>
-                    {% else %}
-                        <div class="text-muted text-end">
-                            <small>Tu calificación:</small><br>
-                            <div class="review-stars-display" id="stars-for-review-{{ app.review.pk }}">
-                                {% include 'includes/star_rating.html' with rating=app.review.rating %}
-                            </div>
-                            <div class="mt-2">
-                                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal"
-                                         data-bs-target="#reviewFormModal" data-mode="edit" data-review-pk="{{ app.review.pk }}">
-                                     <i class="bi bi-pencil"></i> Editar
-                                 </button>
-                                 <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal"
-                                         data-bs-target="#deleteReviewModal" data-review-pk="{{ app.review.pk }}">
-                                     <i class="bi bi-trash"></i> Borrar
-                                 </button>
-                            </div>
-                        </div>
-                    {% endif %}
+              </div>
+              {% with pay_info=app.get_payment_status_info %}
+                {% if pay_info.detail %}
+                  <small class="text-white-50 d-block mt-1.5"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
                 {% endif %}
+              {% endwith %}
             </div>
-            {% if app.can_be_cancelled_by_client %}
-                <button type="button" class="btn btn-outline-danger btn-sm cancel-appointment-btn mt-auto" 
-                        data-bs-toggle="modal" data-bs-target="#cancelAppointmentModal" 
-                        data-appointment-id="{{ app.pk }}" data-appointment-time="{{ app.start_time|date:'d/m/Y H:i' }}"
-                        data-appointment-service="{{ app.service.name }}">
-                    <i class="bi bi-x-circle"></i> Cancelar Turno
-                </button>
-            {% endif %}
+            <div class="col-md-3 text-md-end d-flex flex-column align-items-md-end justify-content-between gap-3">
+              <div id="review-controls-{{ app.pk }}">
+                  {% if app.status == 'COMPLETED' %}
+                      {% if not app.review %}
+                          <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#reviewFormModal"
+                                  data-mode="create" data-appointment-pk="{{ app.pk }}">
+                              <i class="bi bi-chat-left-text me-1"></i> Dejar reseña
+                          </button>
+                      {% else %}
+                          <div class="text-muted text-md-end">
+                              <small class="text-white-50">Tu calificación:</small><br>
+                              <div class="review-stars-display my-1" id="stars-for-review-{{ app.review.pk }}">
+                                  {% include 'includes/star_rating.html' with rating=app.review.rating %}
+                              </div>
+                              <div class="mt-2 btn-group btn-group-sm">
+                                   <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal"
+                                           data-bs-target="#reviewFormModal" data-mode="edit" data-review-pk="{{ app.review.pk }}">
+                                       <i class="bi bi-pencil"></i>
+                                   </button>
+                                   <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal"
+                                           data-bs-target="#deleteReviewModal" data-review-pk="{{ app.review.pk }}">
+                                       <i class="bi bi-trash"></i>
+                                   </button>
+                              </div>
+                          </div>
+                      {% endif %}
+                  {% endif %}
+              </div>
+              {% if app.can_be_cancelled_by_client %}
+                  <button type="button" class="btn btn-outline-danger btn-sm cancel-appointment-btn w-100" 
+                          data-bs-toggle="modal" data-bs-target="#cancelAppointmentModal" 
+                          data-appointment-id="{{ app.pk }}" data-appointment-time="{{ app.start_time|date:'d/m/Y H:i' }}"
+                          data-appointment-service="{{ app.service.name }}">
+                      <i class="bi bi-x-circle"></i> Cancelar cita
+                  </button>
+              {% endif %}
+            </div>
+          </div>
         </div>
+      </div>
     </div>
-  </li>
-  {% empty %}
-  <li class="list-group-item">Aún no has reservado ningún turno.</li>
-  {% endfor %}
-</ul>
+    {% empty %}
+    <div class="col-12">
+      <div class="card text-center py-5 shadow-lg">
+        <div class="card-body">
+          <i class="bi bi-calendar-x fs-1 text-muted d-block mb-3"></i>
+          <h5 class="text-white">Aún no has reservado ningún turno</h5>
+          <p class="text-muted">¡Reserva tu primer turno en segundos!</p>
+          <a href="{% url 'home' %}" class="btn btn-primary mt-2"><i class="bi bi-search me-1"></i> Buscar peluquerías</a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
 
 <!-- Review Create/Edit Modal -->
-<div class="modal fade" id="reviewFormModal" tabindex="-1" aria-labelledby="reviewFormModalLabel" aria-hidden="true" data-bs-backdrop="static">
+<div class="modal fade" id="reviewFormModal" tabindex="-1" aria-labelledby="reviewFormModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
@@ -174,7 +202,7 @@
         <div class="modal-content shadow-lg border-0 bg-dark text-light">
             <div class="modal-header border-bottom border-secondary">
                 <h5 class="modal-title d-flex align-items-center gap-2" id="cancelAppointmentModalLabel">
-                    <i class="bi bi-exclamation-triangle-fill text-danger"></i> Confirmar Cancelación
+                    <i class="bi bi-exclamation-triangle-fill text-danger"></i> Confirmar cancelación
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -192,10 +220,10 @@
                     <div id="cancelFormErrors" class="alert alert-danger d-none mt-3"></div>
                 </div>
                 <div class="modal-footer border-top border-secondary">
-                    <button type="button" class="btn btn-outline-secondary text-light" data-bs-dismiss="modal">Mantener Turno</button>
+                    <button type="button" class="btn btn-outline-secondary text-light" data-bs-dismiss="modal">Mantener turno</button>
                     <button type="submit" class="btn btn-danger d-flex align-items-center gap-2" id="confirm-cancel-btn">
                         <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="cancel-spinner"></span>
-                        Sí, Cancelar Turno
+                        Sí, cancelar turno
                     </button>
                 </div>
             </form>

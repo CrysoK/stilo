@@ -1,18 +1,18 @@
 {% extends "my_hairdresser_base.html" %}
 {% load crispy_forms_tags %}
 
-{% block title %}Mi Peluquería{% endblock %}
+{% block title %}Mi peluquería{% endblock %}
 
 {% block tab_content %}
 <form method="post">
   {% csrf_token %}
   
   <!-- Información General -->
-  <div class="card shadow-sm border-0 mb-4">
-    <div class="card-header bg-body-tertiary border-0 py-3">
-      <h5 class="mb-0 text-primary"><i class="bi bi-info-circle-fill"></i> Información General</h5>
+  <div class="card shadow-lg mb-4">
+    <div class="card-header bg-transparent border-secondary-subtle py-3">
+      <h5 class="mb-0 text-gold fw-bold"><i class="bi bi-info-circle-fill me-1"></i> Información general</h5>
     </div>
-    <div class="card-body">
+    <div class="card-body p-4">
       {{ form.name|as_crispy_field }}
       {{ form.address|as_crispy_field }}
       {{ form.phone_number|as_crispy_field }}
@@ -22,28 +22,28 @@
   </div>
 
   <!-- Ubicación -->
-  <div class="card shadow-sm border-0 mb-4">
-    <div class="card-header bg-body-tertiary border-0 py-3">
-      <h5 class="mb-0 text-primary"><i class="bi bi-map-fill"></i> Ubicación</h5>
+  <div class="card shadow-lg mb-4">
+    <div class="card-header bg-transparent border-secondary-subtle py-3">
+      <h5 class="mb-0 text-gold fw-bold"><i class="bi bi-map-fill me-1"></i> Ubicación</h5>
     </div>
-    <div class="card-body">
+    <div class="card-body p-4">
       {{ form.latitude }}
       {{ form.longitude }}
       <div class="mb-3">
-        <label class="form-label">Ubicación en el mapa</label>
-        <div id="map" style="height: 350px; width: 100%;" class="mb-2 rounded"></div>
+        <label class="form-label text-white-50">Ubicación en el mapa</label>
+        <div id="map" style="height: 350px; width: 100%;" class="mb-3 rounded border border-secondary-subtle"></div>
         <div class="d-flex flex-wrap gap-2" role="group">
-          <button type="button" id="use-current-location" class="btn btn-sm btn-secondary">
-            <i class="bi bi-geo-alt-fill"></i> Usar mi ubicación actual
+          <button type="button" id="use-current-location" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-geo-alt-fill me-1"></i> Usar mi ubicación actual
           </button>
           <button type="button" id="locate-address-on-map" class="btn btn-sm btn-primary">
-            <i class="bi bi-search"></i> Localizar dirección en el mapa
+            <i class="bi bi-search me-1"></i> Localizar dirección
           </button>
-          <button type="button" id="update-address-from-map" class="btn btn-sm btn-info">
-            <i class="bi bi-arrow-clockwise"></i> Actualizar dirección desde el mapa
+          <button type="button" id="update-address-from-map" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-clockwise me-1"></i> Actualizar dirección
           </button>
         </div>
-        <small class="form-text text-muted d-block mt-1">
+        <small class="form-text text-muted d-block mt-2">
           Haga clic en el mapa o arrastre el marcador para establecer las coordenadas.
         </small>
       </div>
@@ -51,19 +51,19 @@
   </div>
 
   <!-- Integración con MercadoPago y Pagos -->
-  <div class="card shadow-sm border-0 mb-4">
-    <div class="card-header bg-body-tertiary border-0 py-3">
-      <h5 class="mb-0 text-primary"><i class="bi bi-wallet2"></i> Integración con MercadoPago y Pagos</h5>
+  <div class="card shadow-lg mb-4">
+    <div class="card-header bg-transparent border-secondary-subtle py-3">
+      <h5 class="mb-0 text-gold fw-bold"><i class="bi bi-wallet2 me-1"></i> Integración con MercadoPago y pagos</h5>
     </div>
-    <div class="card-body">
+    <div class="card-body p-4">
       {% if object.mercadopago_access_token %}
         <!-- Cuenta vinculada exitosamente -->
-        <div class="alert alert-success border-0 shadow-sm d-flex flex-column flex-md-row align-items-md-center justify-content-between p-3 mb-4">
+        <div class="alert alert-success border border-success-subtle d-flex flex-column flex-md-row align-items-md-center justify-content-between p-4 mb-4 rounded-3" style="background: rgba(16, 185, 129, 0.05); backdrop-filter: blur(8px);">
           <div class="d-flex align-items-center mb-3 mb-md-0">
             <i class="bi bi-patch-check-fill me-3 fs-3 text-success"></i>
             <div>
-              <h6 class="alert-heading mb-1 fw-bold text-success">Cuenta de MercadoPago Vinculada</h6>
-              <p class="mb-0 text-success-emphasis small">ID de usuario de MercadoPago: <strong>{{ object.mercadopago_user_id }}</strong></p>
+              <h6 class="alert-heading mb-1 fw-bold text-success">Cuenta de MercadoPago vinculada</h6>
+              <p class="mb-0 text-white-50 small">ID de usuario de MercadoPago: <strong>{{ object.mercadopago_user_id }}</strong></p>
             </div>
           </div>
           <div>
@@ -78,42 +78,42 @@
         </div>
         
         <div id="mercadopago-fields-wrapper" style="transition: all 0.3s ease;">
-          <div class="row">
-            <div class="col-md-6 mb-3">
+          <div class="row g-3">
+            <div class="col-md-6">
               {{ form.default_allow_prepayment|as_crispy_field }}
             </div>
-            <div class="col-md-6 mb-3">
+            <div class="col-md-6">
               {{ form.default_allow_on_site_payment|as_crispy_field }}
             </div>
           </div>
 
-          <hr class="my-4">
+          <hr class="my-4 border-secondary-subtle">
 
           <div class="mb-3">
             {{ form.requires_deposit|as_crispy_field }}
           </div>
 
-          <div id="deposit-fields-wrapper" class="row" style="transition: all 0.3s ease;">
-            <div class="col-md-6 mb-3">
+          <div id="deposit-fields-wrapper" class="row g-3" style="transition: all 0.3s ease;">
+            <div class="col-md-6">
               {{ form.default_deposit_type|as_crispy_field }}
             </div>
-            <div class="col-md-6 mb-3">
+            <div class="col-md-6">
               {{ form.default_deposit_value|as_crispy_field }}
             </div>
           </div>
         </div>
       {% else %}
         <!-- Cuenta no vinculada -->
-        <div class="alert alert-warning border-0 shadow-sm d-flex align-items-start p-3 mb-4">
+        <div class="alert alert-warning border border-warning-subtle d-flex align-items-start p-4 mb-4 rounded-3" style="background: rgba(245, 158, 11, 0.05); backdrop-filter: blur(8px);">
           <i class="bi bi-exclamation-triangle-fill me-3 fs-4 text-warning"></i>
           <div>
             <h6 class="alert-heading mb-1 fw-bold text-warning">MercadoPago no configurado</h6>
-            <p class="mb-0 text-warning-emphasis small">Para poder recibir cobros digitales en tu peluquería (señas o pagos adelantados), debes vincular tu cuenta de MercadoPago.</p>
+            <p class="mb-0 text-white-50 small">Para poder recibir cobros digitales en tu peluquería (señas o pagos adelantados), debes vincular tu cuenta de MercadoPago.</p>
           </div>
         </div>
 
-        <div class="d-grid gap-2 mb-4">
-          <a href="{% url 'mercadopago_auth_redirect' %}" class="btn btn-primary btn-lg d-flex align-items-center justify-content-center gap-2 shadow-sm py-3" style="background: linear-gradient(135deg, #009ee3, #007eb5); border: none; font-weight: 600; transition: transform 0.2s ease, box-shadow 0.2s ease;" onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 4px 12px rgba(0, 158, 227, 0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+        <div class="d-grid mb-4">
+          <a href="{% url 'mercadopago_auth_redirect' %}" class="btn btn-primary d-flex align-items-center justify-content-center gap-2 shadow py-3 btn-lg" style="background: linear-gradient(135deg, #009ee3, #007eb5); border: none; font-weight: 600;">
             <i class="bi bi-wallet2 fs-4"></i> Vincular cuenta con MercadoPago
           </a>
         </div>
@@ -130,6 +130,8 @@
           <input type="number" name="default_deposit_value" id="id_default_deposit_value" value="0">
         </div>
       {% endif %}
+    </div>
+  </div>
 
   <div class="text-end mt-4">
     <button type="submit" class="btn btn-primary">Guardar</button>
