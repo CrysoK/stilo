@@ -3127,7 +3127,27 @@ class AppointmentTimeAdjustmentTestCase(TestCase):
             status="CONFIRMED"
         )
 
+        # Turno 3: empieza en now + 30 min (consecutivo a app1)
+        app3 = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now + datetime.timedelta(minutes=30),
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Turno 4: empieza en now + 60 min (consecutivo a app3)
+        app4 = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now + datetime.timedelta(minutes=60),
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
         # Turno 2: empieza en 130m del futuro (más de 2 horas)
+        # Hay un hueco entre app4 (termina en 90) y app2 (empieza en 130) de 40m.
+        # Al reprogramar app1 +10 min, la cascada llega a app4 (termina en 100), pero como 100 <= 130, se detiene antes de app2.
         app2 = Appointment.objects.create(
             client=self.client_user,
             service=self.service,
@@ -3136,42 +3156,26 @@ class AppointmentTimeAdjustmentTestCase(TestCase):
             status="CONFIRMED"
         )
 
-        # Turno 3: empieza en now + 45 min (entre 30 y 60 min)
-        app3 = Appointment.objects.create(
-            client=self.client_user,
-            service=self.service,
-            start_time=now + datetime.timedelta(minutes=45),
-            amount=self.service.price,
-            status="CONFIRMED"
-        )
-
-        # Turno 4: empieza en now + 115 min (menos de 2 horas)
-        app4 = Appointment.objects.create(
-            client=self.client_user,
-            service=self.service,
-            start_time=now + datetime.timedelta(minutes=115),
-            amount=self.service.price,
-            status="CONFIRMED"
-        )
-
         # Desplazamos Turno 1 en +10 min
         # Esto debería reprogramar:
-        # - Turno 2: 130 -> 140 min (> 120 min, no cruza, no se notifica)
-        # - Turno 3: 45 -> 55 min (30-60 min, no cruza, no se notifica)
-        # - Turno 4: 115 -> 125 min (cruza el umbral de 120m hacia arriba, SE NOTIFICA)
+        # - Turno 3: 30 -> 40 min (no se notifica porque se mantiene en el escalón de 30-60 min)
+        # - Turno 4: 60 -> 70 min (se notifica porque cruza el umbral de 1 hora hacia arriba, >60m y antes <=60m)
+        # - Turno 2: no se reprograma ya que hay hueco libre suficiente.
+        app1.extra_minutes = 10
+        app1.save()
         affected = reschedule_subsequent_appointments(app1, 10)
 
         app2.refresh_from_db()
         app3.refresh_from_db()
         app4.refresh_from_db()
 
-        self.assertEqual(app2.start_time, now + datetime.timedelta(minutes=140))
-        self.assertEqual(app3.start_time, now + datetime.timedelta(minutes=55))
-        self.assertEqual(app4.start_time, now + datetime.timedelta(minutes=125))
+        self.assertEqual(app3.start_time, now + datetime.timedelta(minutes=40))
+        self.assertEqual(app4.start_time, now + datetime.timedelta(minutes=70))
+        self.assertEqual(app2.start_time, now + datetime.timedelta(minutes=130))
 
         self.assertIn(app4, affected)
-        self.assertNotIn(app2, affected)
         self.assertNotIn(app3, affected)
+        self.assertNotIn(app2, affected)
 
     @patch("core.utils.send_push_notification")
     @patch("core.utils.send_html_email")
@@ -3556,19 +3560,12 @@ class SchedulePauseTestCase(TestCase):
         from core.models import Appointment
 
         # Create two appointments for today in the future
-        now = timezone.now()
-        today = timezone.localtime(now).date()
+        now = timezone.now().replace(microsecond=0)
         
-        # Future appointment 1: starts in 2 hours
-        start_1 = timezone.make_aware(
-            datetime.datetime.combine(today, datetime.time(15, 0)),
-            timezone.get_current_timezone()
-        )
-        # Ensure it's in the future compared to now. If not, let's use timezone.now() + 2 hours
-        if start_1 < now:
-            start_1 = now + datetime.timedelta(hours=2)
-            
-        start_2 = start_1 + datetime.timedelta(minutes=45)
+        # Future appointment 1: starts in 15 minutes
+        start_1 = now + datetime.timedelta(minutes=15)
+        # Future appointment 2: starts in 45 minutes
+        start_2 = now + datetime.timedelta(minutes=45)
 
         app1 = Appointment.objects.create(
             service=self.service,
@@ -3588,19 +3585,18 @@ class SchedulePauseTestCase(TestCase):
         self.client.login(username="owner_pause", password="password123")
         url = reverse("add_pause")
         
-        # Add 30-minute pause
+        # Add 30-minute pause. With a gap of 15 min, the excess is 15 min.
+        # Both appointments should shift by exactly 15 minutes.
         response = self.client.post(url, {"minutes": 30})
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["status"], "success")
         self.assertIn("30 minutos", data["message"])
-        
-        # Check that both appointments were shifted by exactly 30 minutes
+        self.assertIn("Se reprogramaron 2 turnos", data["message"])
         app1.refresh_from_db()
         app2.refresh_from_db()
-        
-        self.assertEqual(app1.start_time, start_1 + datetime.timedelta(minutes=30))
-        self.assertEqual(app2.start_time, start_2 + datetime.timedelta(minutes=30))
+        self.assertAlmostEqual((app1.start_time - (start_1 + datetime.timedelta(minutes=15))).total_seconds(), 0, delta=5)
+        self.assertAlmostEqual((app2.start_time - (start_2 + datetime.timedelta(minutes=15))).total_seconds(), 0, delta=5)
 
     def test_add_schedule_pause_past_unaffected(self):
         import datetime
@@ -3644,6 +3640,136 @@ class SchedulePauseTestCase(TestCase):
         self.client.login(username="normal_user", password="password123")
         response = self.client.post(url, {"minutes": 15})
         self.assertEqual(response.status_code, 302) # Redirects to home due to OwnerRequiredMixin
+
+    def test_add_schedule_pause_absorbed_by_gap(self):
+        import datetime
+        from django.utils import timezone
+        from core.models import Appointment
+
+        now = timezone.now().replace(microsecond=0)
+        
+        # El primer turno empieza en 1 hora (60 minutos)
+        start_1 = now + datetime.timedelta(minutes=60)
+
+        app1 = Appointment.objects.create(
+            service=self.service,
+            start_time=start_1,
+            status="CONFIRMED",
+            payment_method="CASH",
+            client_name="Cliente 1"
+        )
+
+        self.client.login(username="owner_pause", password="password123")
+        url = reverse("add_pause")
+        
+        # Pausa de 15 minutos. Cabe perfectamente en el hueco de 60 minutos.
+        # No debería reprogramarse ningún turno.
+        response = self.client.post(url, {"minutes": 15})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+        self.assertIn("No fue necesario reprogramar turnos", data["message"])
+        
+        app1.refresh_from_db()
+        self.assertEqual(app1.start_time, start_1)
+
+    def test_add_schedule_pause_no_future_appointments(self):
+        self.client.login(username="owner_pause", password="password123")
+        url = reverse("add_pause")
+        
+        # No hay turnos en el futuro.
+        response = self.client.post(url, {"minutes": 15})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+        self.assertIn("No fue necesario reprogramar turnos", data["message"])
+
+    def test_reschedule_subsequent_appointments_absorbed_by_gap(self):
+        import datetime
+        from django.utils import timezone
+        from core.models import Appointment
+        from core.utils import reschedule_subsequent_appointments
+
+        now = timezone.now().replace(microsecond=0)
+        # Turno 1: empieza en now, dura 30m, termina a las 30m
+        app1 = Appointment.objects.create(
+            client=self.owner,
+            service=self.service,
+            start_time=now,
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Turno 2: empieza en 60m (hay 30m de hueco)
+        app2 = Appointment.objects.create(
+            client=self.owner,
+            service=self.service,
+            start_time=now + datetime.timedelta(minutes=60),
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Extendemos Turno 1 por +10m (nuevo end_time a las 40m).
+        # Cabe en el hueco de 30m. El Turno 2 no debería moverse.
+        app1.extra_minutes = 10
+        app1.save()
+
+        affected = reschedule_subsequent_appointments(app1, 10)
+
+        app2.refresh_from_db()
+        self.assertEqual(app2.start_time, now + datetime.timedelta(minutes=60))
+        self.assertEqual(len(affected), 0)
+
+    def test_reschedule_subsequent_appointments_partial_cascade(self):
+        import datetime
+        from django.utils import timezone
+        from core.models import Appointment
+        from core.utils import reschedule_subsequent_appointments
+
+        now = timezone.now().replace(microsecond=0)
+        # Turno 1: empieza en now, dura 30m, termina a las 30m
+        app1 = Appointment.objects.create(
+            client=self.owner,
+            service=self.service,
+            start_time=now,
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Turno 2: empieza en 40m (10m de hueco), dura 30m, termina a las 70m
+        app2 = Appointment.objects.create(
+            client=self.owner,
+            service=self.service,
+            start_time=now + datetime.timedelta(minutes=40),
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Turno 3: empieza en 120m (50m de hueco)
+        app3 = Appointment.objects.create(
+            client=self.owner,
+            service=self.service,
+            start_time=now + datetime.timedelta(minutes=120),
+            amount=self.service.price,
+            status="CONFIRMED"
+        )
+
+        # Extendemos Turno 1 por +20m (nuevo end_time a las 50m).
+        # Excede el hueco de 10m por 10m.
+        # Turno 2 se desplaza a las 50m (+10m), y ahora termina a las 80m.
+        # Turno 3 empieza a las 120m. Como 80 <= 120, no se desplaza (se detiene la cascada).
+        app1.extra_minutes = 20
+        app1.save()
+
+        affected = reschedule_subsequent_appointments(app1, 20)
+
+        app2.refresh_from_db()
+        app3.refresh_from_db()
+
+        self.assertEqual(app2.start_time, now + datetime.timedelta(minutes=50))
+        self.assertEqual(app3.start_time, now + datetime.timedelta(minutes=120))
+        self.assertNotIn(app2, affected)
+        self.assertNotIn(app3, affected)
 
 
 class OwnerAppointmentSearchTestCase(TestCase):

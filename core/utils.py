@@ -545,35 +545,37 @@ def refresh_mercadopago_token(hairdresser):
     return data
 
 
-def reschedule_subsequent_appointments(appointment, delta_minutes):
+def _cascade_shift_appointments(hairdresser, cursor, after_time, today):
     """
-    Desplaza en cascada los turnos posteriores del mismo peluquero para el mismo día.
-    Retorna la lista de turnos que de acuerdo con el escalonamiento de notificaciones
-    deben ser notificados al cliente.
+    Desplaza en cascada los turnos del día que se solapen con el cursor.
+    Solo mueve los turnos necesarios, absorbiendo huecos libres.
+    Retorna (shifted_count, affected_to_notify).
     """
     from datetime import timedelta
     from django.utils import timezone
     from core.models import Appointment
 
-    # Buscar turnos activos del día de la misma peluquería que empiecen después del actual
-    today = timezone.localtime(appointment.start_time).date()
     subsequent = Appointment.objects.filter(
-        service__hairdresser=appointment.service.hairdresser,
+        service__hairdresser=hairdresser,
         start_time__date=today,
-        start_time__gt=appointment.start_time,
+        start_time__gt=after_time,
     ).exclude(status__in=["COMPLETED", "NO_SHOW", "CANCELLED"]).order_by("start_time")
 
+    shifted_count = 0
     affected_to_notify = []
     now = timezone.now()
 
     for app in subsequent:
-        old_start = app.start_time
-        # Desplazar start_time
-        app.start_time = app.start_time + timedelta(minutes=delta_minutes)
+        if cursor <= app.start_time:
+            break  # Hay hueco libre suficiente, se corta la cascada
+
+        # Desplazar start_time al cursor actual
+        app.start_time = cursor
         app.save()  # Esto recalcula y guarda end_time automáticamente
+        cursor = app.end_time
+        shifted_count += 1
 
         # Lógica de notificaciones "escalonadas" para evitar spam:
-        # 1. Calcular minutos restantes para el NUEVO start_time
         remaining_minutes = (app.start_time - now).total_seconds() / 60
 
         should_notify = False
@@ -604,6 +606,25 @@ def reschedule_subsequent_appointments(appointment, delta_minutes):
         if should_notify:
             affected_to_notify.append(app)
 
+    return shifted_count, affected_to_notify
+
+
+def reschedule_subsequent_appointments(appointment, delta_minutes):
+    """
+    Desplaza en cascada los turnos posteriores del mismo peluquero para el mismo día.
+    Retorna la lista de turnos que de acuerdo con el escalonamiento de notificaciones
+    deben ser notificados al cliente.
+    """
+    from django.utils import timezone
+    today = timezone.localtime(appointment.start_time).date()
+    cursor = appointment.end_time  # ya incluye el nuevo extra_minutes
+    
+    shifted_count, affected_to_notify = _cascade_shift_appointments(
+        hairdresser=appointment.service.hairdresser,
+        cursor=cursor,
+        after_time=appointment.start_time,
+        today=today,
+    )
     return affected_to_notify
 
 
@@ -628,50 +649,19 @@ def add_schedule_pause(hairdresser, delta_minutes):
     """
     from datetime import timedelta
     from django.utils import timezone
-    from core.models import Appointment
 
     now = timezone.now()
     today = timezone.localtime(now).date()
+    cursor = now + timedelta(minutes=delta_minutes)
 
-    # Buscar todos los turnos CONFIRMED o PENDING del día de la misma peluquería que empiecen en el futuro
-    subsequent = Appointment.objects.filter(
-        service__hairdresser=hairdresser,
-        start_time__date=today,
-        start_time__gt=now,
-    ).exclude(status__in=["COMPLETED", "NO_SHOW", "CANCELLED"]).order_by("start_time")
-
-    affected_to_notify = []
-
-    for app in subsequent:
-        app.start_time = app.start_time + timedelta(minutes=delta_minutes)
-        app.save()  # Esto recalcula y guarda end_time automáticamente
-
-        # Lógica de notificaciones escalonadas para evitar spam:
-        remaining_minutes = (app.start_time - now).total_seconds() / 60
-
-        should_notify = False
-        if not app.last_notified_start_time:
-            if remaining_minutes <= 120:
-                should_notify = True
-        else:
-            last_remaining = (app.last_notified_start_time - now).total_seconds() / 60
-            
-            if remaining_minutes <= 30:
-                if app.start_time != app.last_notified_start_time:
-                    should_notify = True
-            elif remaining_minutes <= 60 and last_remaining > 60:
-                should_notify = True
-            elif remaining_minutes <= 120 and last_remaining > 120:
-                should_notify = True
-            elif remaining_minutes > 60 and last_remaining <= 60:
-                should_notify = True
-            elif remaining_minutes > 120 and last_remaining <= 120:
-                should_notify = True
-
-        if should_notify:
-            affected_to_notify.append(app)
+    shifted_count, affected_to_notify = _cascade_shift_appointments(
+        hairdresser=hairdresser,
+        cursor=cursor,
+        after_time=now,
+        today=today,
+    )
 
     notify_rescheduled_appointments(affected_to_notify)
-    return len(subsequent)
+    return shifted_count
 
 

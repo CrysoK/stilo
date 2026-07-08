@@ -1412,7 +1412,12 @@ class AddPauseView(OwnerRequiredMixin, View):
         from core.utils import add_schedule_pause
         shifted_count = add_schedule_pause(hairdresser, minutes)
         
-        msg = f"Se ha agregado la pausa de {minutes} minutos. Se reprogramaron {shifted_count} turnos posteriores."
+        if shifted_count == 0:
+            msg = f"Se ha agregado la pausa de {minutes} minutos. No fue necesario reprogramar turnos."
+        elif shifted_count == 1:
+            msg = f"Se ha agregado la pausa de {minutes} minutos. Se reprogramó 1 turno posterior."
+        else:
+            msg = f"Se ha agregado la pausa de {minutes} minutos. Se reprogramaron {shifted_count} turnos posteriores."
         return JsonResponse({"status": "success", "message": msg})
 
 
