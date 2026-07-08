@@ -258,6 +258,19 @@ class AppointmentForm(forms.ModelForm):
         # y los PENDING con expires_at que aún no han expirado.
         from django.db.models import Q
 
+        # Validar si el turno se superpone con alguna pausa del peluquero
+        from core.models import Pause
+        overlapping_pauses = Pause.objects.filter(
+            hairdresser=hairdresser,
+            start_time__lt=end_time,
+            end_time__gt=start_time,
+        )
+        if overlapping_pauses.exists():
+            raise ValidationError(
+                "Este horario no está disponible por el momento.",
+                code="overlap_pause",
+            )
+
         overlapping_appointments = Appointment.objects.filter(
             service__hairdresser=hairdresser,
             start_time__lt=end_time,
@@ -514,6 +527,16 @@ class WalkInAppointmentForm(forms.ModelForm):
                 raise ValidationError("El servicio excede el horario de atención para el día seleccionado.")
 
             # 2. Comprobar si hay turnos que se superponen
+            # Validar si el turno se superpone con alguna pausa del peluquero
+            from core.models import Pause
+            overlapping_pauses = Pause.objects.filter(
+                hairdresser=service.hairdresser,
+                start_time__lt=end_time,
+                end_time__gt=start_time,
+            )
+            if overlapping_pauses.exists():
+                raise ValidationError("Este horario no está disponible por el momento.")
+
             overlapping_appointments = Appointment.objects.filter(
                 service__hairdresser=service.hairdresser,
                 start_time__lt=end_time,

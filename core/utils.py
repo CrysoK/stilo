@@ -649,6 +649,7 @@ def add_schedule_pause(hairdresser, delta_minutes):
     """
     from datetime import timedelta
     from django.utils import timezone
+    from core.models import Pause
 
     now = timezone.now()
     today = timezone.localtime(now).date()
@@ -661,7 +662,14 @@ def add_schedule_pause(hairdresser, delta_minutes):
         today=today,
     )
 
+    Pause.objects.create(
+        hairdresser=hairdresser,
+        start_time=now,
+        end_time=cursor
+    )
+
     notify_rescheduled_appointments(affected_to_notify)
     return shifted_count
+
 
 

@@ -1126,6 +1126,24 @@ def appointment_events_data(request, hairdresser_id):
                 "classNames": ["reserved-event"],
             }
         )
+
+    from core.models import Pause
+    pauses = Pause.objects.filter(hairdresser_id=hairdresser_id)
+    for p in pauses:
+        events.append(
+            {
+                "title": "No disponible",
+                "start": p.start_time.isoformat(),
+                "end": p.end_time.isoformat(),
+                "color": "#dc3545",
+                "textColor": "#ffffff",
+                "classNames": ["pause-event"],
+                "extendedProps": {
+                    "isPause": True
+                }
+            }
+        )
+
     return JsonResponse(events, safe=False)
 
 
@@ -1421,6 +1439,65 @@ class AddPauseView(OwnerRequiredMixin, View):
         return JsonResponse({"status": "success", "message": msg})
 
 
+@login_required
+@require_POST
+def delete_pause(request, pk):
+    if not request.user.is_owner:
+        return JsonResponse({"status": "error", "message": "No autorizado."}, status=403)
+    
+    from core.models import Pause, Appointment
+    pause = get_object_or_404(Pause, pk=pk, hairdresser=request.user.hairdresser_profile)
+    
+    now = timezone.now()
+    if pause.start_time <= now < pause.end_time:
+        # Calcular los minutos liberados
+        minutes_early = int(round((pause.end_time - now).total_seconds() / 60))
+        
+        # Si la pausa está activa/en curso, la finalizamos ahora mismo acortando su end_time a 'now'
+        pause.end_time = now
+        pause.save()
+        msg = "Pausa finalizada correctamente."
+        
+        # Si la pausa se acortó al menos 5 minutos, ofrecer adelantar al próximo cliente
+        if minutes_early >= 5:
+            next_app = Appointment.objects.filter(
+                service__hairdresser=pause.hairdresser,
+                start_time__date=now.date(),
+                start_time__gt=now
+            ).exclude(status__in=["COMPLETED", "NO_SHOW", "CANCELLED"]).order_by("start_time").first()
+            
+            if next_app:
+                import uuid
+                from datetime import timedelta
+                from core.models import EarlyStartOffer
+                from core.utils import notify_user
+                
+                token = str(uuid.uuid4())
+                offer = EarlyStartOffer.objects.create(
+                    appointment=next_app,
+                    token=token,
+                    minutes_available=minutes_early,
+                    new_start_time=now,
+                    expires_at=now + timedelta(minutes=2)
+                )
+                accept_url = request.build_absolute_uri(
+                    reverse("accept_early_start", kwargs={"token": offer.token})
+                )
+                notify_user(
+                    user=next_app.client,
+                    event_type="APPOINTMENT_EARLY_OFFER",
+                    context={"appointment": next_app, "offer": offer, "accept_url": accept_url},
+                    subject="¡Adelantá tu Turno! - Stilo"
+                )
+                msg += " Se ofreció adelantar el horario al próximo cliente."
+    else:
+        # Si es una pausa futura, la eliminamos por completo
+        pause.delete()
+        msg = "Pausa eliminada correctamente."
+        
+    return JsonResponse({"status": "success", "message": msg})
+
+
 class WorkstationView(OwnerRequiredMixin, TemplateView):
     template_name = "workstation.html"
 
@@ -1464,11 +1541,47 @@ class WorkstationView(OwnerRequiredMixin, TemplateView):
                 else:
                     upcoming_appointments.append(app)
 
+        # Obtener las pausas de hoy
+        from core.models import Pause
+        pauses_today = Pause.objects.filter(
+            hairdresser=hairdresser,
+            start_time__date=today,
+        ).order_by("start_time")
+
+        active_pause = None
+        for p in pauses_today:
+            if p.start_time <= now < p.end_time:
+                active_pause = p
+                break
+
         context["current_appointment"] = current_appointment
         context["next_appointment"] = next_appointment
-        context["upcoming_appointments"] = upcoming_appointments
         context["completed_appointments"] = completed_appointments
         context["hairdresser"] = hairdresser
+        context["active_pause"] = active_pause
+        if active_pause:
+            context["pause_duration_minutes"] = int((active_pause.end_time - active_pause.start_time).total_seconds() / 60)
+
+        # Construir la timeline de eventos futuros (turnos en espera y pausas futuras)
+        upcoming_timeline = []
+        for app in upcoming_appointments:
+            upcoming_timeline.append({
+                "type": "appointment",
+                "time": app.start_time,
+                "object": app
+            })
+
+        for p in pauses_today:
+            if p.start_time > now:
+                upcoming_timeline.append({
+                    "type": "pause",
+                    "time": p.start_time,
+                    "object": p,
+                    "duration": int((p.end_time - p.start_time).total_seconds() / 60)
+                })
+
+        upcoming_timeline.sort(key=lambda x: x["time"])
+        context["upcoming_timeline"] = upcoming_timeline
 
         # Cantidad de solicitudes pendientes de confirmación manual para otros días
         context["pending_requests_count"] = (

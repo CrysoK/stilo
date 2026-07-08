@@ -679,7 +679,11 @@
 
       eventClick: function(info) {
         if (info.event.display !== 'background') {
-          showPopover(info.el, "Este horario ya está reservado.", info.jsEvent);
+          if (info.event.extendedProps.isPause) {
+            showPopover(info.el, "Este horario no está disponible por el momento.", info.jsEvent);
+          } else {
+            showPopover(info.el, "Este horario ya está reservado.", info.jsEvent);
+          }
         }
       },
 
@@ -731,15 +735,24 @@
           const reservedEvents = calendar.getEvents().filter(e => e.display !== 'background' && e.groupId !== 'working_hours');
           
           let clickedOnReserved = false;
+          let clickedOnPause = false;
           for (const event of reservedEvents) {
             const eventStart = event.start;
             const eventEnd = event.end;
             if (eventStart && eventEnd) {
               if (clickedTime >= eventStart && clickedTime < eventEnd) {
-                clickedOnReserved = true;
+                if (event.extendedProps.isPause) {
+                  clickedOnPause = true;
+                } else {
+                  clickedOnReserved = true;
+                }
                 break;
               }
             }
+          }
+          if (clickedOnPause) {
+            showPopover(null, "Este horario no está disponible por el momento.", info.jsEvent);
+            return;
           }
           if (clickedOnReserved) {
             showPopover(null, "Este horario ya está reservado.", info.jsEvent);
@@ -747,17 +760,26 @@
           }
 
           let overlaps = false;
+          let overlapsPause = false;
           for (const event of reservedEvents) {
             const eventStart = event.start;
             const eventEnd = event.end;
             if (eventStart && eventEnd) {
               if (clickedTime < eventEnd && proposedEndTime > eventStart) {
-                overlaps = true;
+                if (event.extendedProps.isPause) {
+                  overlapsPause = true;
+                } else {
+                  overlaps = true;
+                }
                 break;
               }
             }
           }
 
+          if (overlapsPause) {
+            showPopover(null, "El servicio solicitado se superpone con un horario no disponible por el momento.", info.jsEvent);
+            return;
+          }
           if (overlaps) {
             showPopover(null, "El horario seleccionado se superpone con un turno ya reservado.", info.jsEvent);
             return;

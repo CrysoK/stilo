@@ -71,6 +71,32 @@
         <div class="col-lg-8">
             <!-- Turno actual -->
             <div id="current-appointment-section">
+                {% if active_pause %}
+                <div class="card shadow-lg border-start border-4 border-warning mb-4" data-pause-id="{{ active_pause.pk }}" style="background: rgba(245, 158, 11, 0.05);">
+                    <div class="card-header d-flex justify-content-between align-items-center bg-transparent border-secondary-subtle">
+                        <h4 class="mb-0 text-warning fw-bold d-flex align-items-center gap-2">
+                            <span class="position-relative d-inline-flex" style="width: 12px; height: 12px;">
+                              <span class="position-absolute inline-flex h-100 w-100 rounded-circle bg-warning opacity-75 animate-ping" style="animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></span>
+                              <span class="position-relative inline-flex rounded-circle h-3 w-3 bg-warning"></span>
+                            </span>
+                            En una pausa
+                        </h4>
+                        <span class="badge bg-warning text-dark align-self-center py-2" id="pause-badge">
+                            <span class="fw-bold">Finaliza en:</span> <span class="countdown fw-bold" data-countdown-to="{{ active_pause.end_time.isoformat }}">--:--</span>
+                        </span>
+                    </div>
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold text-white mb-2 fs-5">Pausa de {{ pause_duration_minutes }} minutos</h5>
+                        <p class="text-white-50 mb-0">Esta pausa comenzó a las {{ active_pause.start_time|time:"H:i" }} y está programada hasta las {{ active_pause.end_time|time:"H:i" }}.</p>
+                    </div>
+                    <div class="card-footer d-flex justify-content-end bg-transparent border-secondary-subtle py-3">
+                        <button class="btn btn-sm btn-outline-warning py-2 px-3 fw-bold" onclick="handleDeletePause({{ active_pause.pk }})">
+                            <i class="bi bi-play-fill me-1"></i> Terminar pausa antes
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
+
                 {% if current_appointment %}
                 <div class="card shadow-lg border-start border-4 border-success mb-4" data-appointment-id="{{ current_appointment.pk }}" style="background: rgba(16, 185, 129, 0.04);">
                     <div class="card-header d-flex justify-content-between align-items-center bg-transparent border-secondary-subtle">
@@ -130,11 +156,13 @@
                         <button class="btn btn-sm btn-outline-danger py-2 px-3 fw-bold" onclick="handleStatusUpdate({{ current_appointment.pk }}, 'NO_SHOW')"><i class="bi bi-person-x-fill me-1"></i> No vino</button>
                     </div>
                 </div>
-                {% else %}
+                {% endif %}
+
+                {% if not active_pause and not current_appointment %}
                 <div class="card bg-secondary mb-4 shadow text-center py-5">
                     <div class="card-body">
                         <i class="bi bi-person-workspace fs-1 text-muted d-block mb-3"></i>
-                        <p class="h5 text-white-50 mb-0">No hay ningún cliente en atención en este momento.</p>
+                        <p class="h5 text-white-50 mb-0">No hay ningún cliente en atención ni pausas activas en este momento.</p>
                     </div>
                 </div>
                 {% endif %}
@@ -196,41 +224,58 @@
         <div class="col-lg-4">
             <h4 class="h5 mb-3 text-gold fw-bold uppercase tracking-wider"><i class="bi bi-list-stars me-1"></i> Cola de espera</h4>
             <div id="upcoming-list" class="list-group gap-2 mb-5 border-0">
-                {% for app in upcoming_appointments %}
-                    <div class="list-group-item d-flex justify-content-between align-items-start gap-2 rounded border p-3" data-appointment-id="{{ app.pk }}" style="background: rgba(255,255,255,0.01) !important;">
-                        <div class="flex-grow-1">
-                            <strong class="text-white">{{ app.start_time|time:"H:i" }}</strong> - <span class="text-white-50">{{ app.display_client_name }}</span>
-                            {% if not app.client %}
-                            <span class="badge bg-secondary text-light small ms-1" style="font-size: 0.7rem; padding: 0.25em 0.5em;"><i class="bi bi-shop"></i> Presencial</span>
-                            {% endif %}
-                            <small class="d-block text-muted mt-1">{{ app.service.name }}</small>
-                            
-                            {% if app.status == 'PENDING' and not app.expires_at %}
-                                <span class="badge bg-warning text-dark mt-2 d-inline-block"><i class="bi bi-hourglass-split me-1"></i> Pendiente</span>
-                            {% endif %}
-                            {% if app.service.hairdresser.mercadopago_active %}
-                                {% with pay_info=app.get_payment_status_info %}
-                                    {% if pay_info.detail %}
-                                        <small class="text-muted d-block mt-1.5"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
-                                    {% endif %}
-                                {% endwith %}
-                            {% endif %}
-                        </div>
-                        <div class="text-end d-flex flex-column gap-2">
-                            {% if app.status == 'PENDING' and not app.expires_at %}
-                                <button class="btn btn-sm btn-success px-2.5 py-1" onclick="handleStatusUpdate({{ app.pk }}, 'CONFIRMED')" title="Confirmar turno"><i class="bi bi-check-circle"></i></button>
-                                <button class="btn btn-sm btn-outline-danger px-2.5 py-1" onclick="handleStatusUpdate({{ app.pk }}, 'CANCELLED')" title="Rechazar solicitud"><i class="bi bi-x-circle"></i></button>
-                            {% else %}
+                {% for item in upcoming_timeline %}
+                    {% if item.type == 'appointment' %}
+                        {% with app=item.object %}
+                        <div class="list-group-item d-flex justify-content-between align-items-start gap-2 rounded border p-3" data-appointment-id="{{ app.pk }}" style="background: rgba(255,255,255,0.01) !important;">
+                            <div class="flex-grow-1">
+                                <strong class="text-white">{{ app.start_time|time:"H:i" }}</strong> - <span class="text-white-50">{{ app.display_client_name }}</span>
+                                {% if not app.client %}
+                                <span class="badge bg-secondary text-light small ms-1" style="font-size: 0.7rem; padding: 0.25em 0.5em;"><i class="bi bi-shop"></i> Presencial</span>
+                                {% endif %}
+                                <small class="d-block text-muted mt-1">{{ app.service.name }}</small>
+                                
+                                {% if app.status == 'PENDING' and not app.expires_at %}
+                                    <span class="badge bg-warning text-dark mt-2 d-inline-block"><i class="bi bi-hourglass-split me-1"></i> Pendiente</span>
+                                {% endif %}
                                 {% if app.service.hairdresser.mercadopago_active %}
                                     {% with pay_info=app.get_payment_status_info %}
-                                        <span class="badge {{ pay_info.badge_class }} font-semibold" style="font-size: 0.72rem;">{{ pay_info.label }}</span>
+                                        {% if pay_info.detail %}
+                                            <small class="text-muted d-block mt-1.5"><i class="bi bi-info-circle"></i> {{ pay_info.detail }}</small>
+                                        {% endif %}
                                     {% endwith %}
                                 {% endif %}
-                            {% endif %}
+                            </div>
+                            <div class="text-end d-flex flex-column gap-2">
+                                {% if app.status == 'PENDING' and not app.expires_at %}
+                                    <button class="btn btn-sm btn-success px-2.5 py-1" onclick="handleStatusUpdate({{ app.pk }}, 'CONFIRMED')" title="Confirmar turno"><i class="bi bi-check-circle"></i></button>
+                                    <button class="btn btn-sm btn-outline-danger px-2.5 py-1" onclick="handleStatusUpdate({{ app.pk }}, 'CANCELLED')" title="Rechazar solicitud"><i class="bi bi-x-circle"></i></button>
+                                {% else %}
+                                    {% if app.service.hairdresser.mercadopago_active %}
+                                        {% with pay_info=app.get_payment_status_info %}
+                                            <span class="badge {{ pay_info.badge_class }} font-semibold" style="font-size: 0.72rem;">{{ pay_info.label }}</span>
+                                        {% endwith %}
+                                    {% endif %}
+                                {% endif %}
+                            </div>
                         </div>
-                    </div>
+                        {% endwith %}
+                    {% else %}
+                        {% with p=item.object %}
+                        <div class="list-group-item d-flex justify-content-between align-items-start gap-2 rounded border p-3 border-warning" data-pause-id="{{ p.pk }}" style="background: rgba(245,158,11,0.02) !important;">
+                            <div class="flex-grow-1">
+                                <strong class="text-warning">{{ p.start_time|time:"H:i" }} - {{ p.end_time|time:"H:i" }}</strong>
+                                <span class="badge bg-warning text-dark border border-warning ms-2" style="font-size: 0.7rem; padding: 0.25em 0.5em;"><i class="bi bi-pause-circle-fill me-1"></i>Pausa</span>
+                                <small class="d-block text-muted mt-1">Duración: {{ item.duration }} minutos</small>
+                            </div>
+                            <div class="text-end">
+                                <button class="btn btn-sm btn-outline-danger px-2.5 py-1" onclick="handleDeletePause({{ p.pk }})" title="Eliminar pausa"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </div>
+                        {% endwith %}
+                    {% endif %}
                 {% empty %}
-                    <div class="list-group-item text-muted text-center py-4 rounded" style="background: rgba(255,255,255,0.01) !important;">No hay más turnos en espera.</div>
+                    <div class="list-group-item text-muted text-center py-4 rounded" style="background: rgba(255,255,255,0.01) !important;">No hay más eventos programados para hoy.</div>
                 {% endfor %}
             </div>
 
@@ -665,6 +710,62 @@ function handleTimeAdjustment(appointmentId, delta) {
     .catch(error => {
         console.error('Fetch error:', error);
         alert('Ocurrió un error al intentar ajustar el tiempo del turno.');
+    });
+}
+
+// Función para eliminar/finalizar una pausa
+function handleDeletePause(pauseId) {
+    const card = document.querySelector(`[data-pause-id="${pauseId}"]`);
+    let originalHtml = '';
+    let actionEl = null;
+
+    if (card) {
+        actionEl = card.querySelector('.card-footer') || card.querySelector('.text-end');
+        if (actionEl) {
+            originalHtml = actionEl.innerHTML;
+            actionEl.innerHTML = `
+                <div class="d-flex align-items-center justify-content-end gap-2 py-1">
+                    <span class="spinner-border spinner-border-sm text-warning" role="status" aria-hidden="true"></span>
+                    <span class="small text-muted">Finalizando...</span>
+                </div>
+            `;
+        }
+    }
+
+    const csrfToken = '{{ csrf_token }}';
+    const url = `{% url 'delete_pause' 0 %}`.replace('0', pauseId);
+
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken,
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            if (card) {
+                card.classList.add('appointment-card-transition', 'fade-out-shrink');
+                setTimeout(() => {
+                    updateWorkstationDOM();
+                }, 400);
+            } else {
+                updateWorkstationDOM();
+            }
+        } else {
+            alert(`Error: ${data.message}`);
+            if (actionEl) {
+                actionEl.innerHTML = originalHtml;
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Fetch error:', error);
+        alert('Ocurrió un error de conexión.');
+        if (actionEl) {
+            actionEl.innerHTML = originalHtml;
+        }
     });
 }
 

@@ -3438,11 +3438,19 @@ class WalkInTestCase(TestCase):
         self.client.login(username="owner_walkin", password="password123")
         url = reverse("register_walk_in")
         
-        # Tuesday, 2026-07-07 10:00 (Tuesday is weekday 1)
+        # Calculate a future Tuesday dynamically (day_of_week=1)
+        from django.utils import timezone
+        import datetime
+        today = timezone.localtime(timezone.now()).date()
+        days_until_tuesday = (1 - today.weekday()) % 7
+        if days_until_tuesday == 0 and timezone.localtime(timezone.now()).time() > datetime.time(18, 0):
+            days_until_tuesday = 7
+        future_tuesday = today + datetime.timedelta(days=days_until_tuesday)
+
         post_data = {
             "service": self.service.id,
             "client_name": "Pedro Picapiedra",
-            "date": "2026-07-07",
+            "date": future_tuesday.isoformat(),
             "start_time_only": "10:00",
         }
         response = self.client.post(url, post_data)
@@ -4010,10 +4018,16 @@ class SmartSchedulingTests(TestCase):
             end_time=datetime.time(20, 0),
         )
 
-        # Lunes en el futuro: 2026-07-06 (2026-07-03 es viernes, así que el próximo lunes es 06)
+        # Find a future Monday relative to today (day_of_week=0)
+        today = timezone.localtime(timezone.now()).date()
+        days_until_monday = (0 - today.weekday()) % 7
+        if days_until_monday == 0:
+            days_until_monday = 7
+        future_monday = today + datetime.timedelta(days=days_until_monday)
+
         # Hora inválida: 10:07
         invalid_time = timezone.make_aware(
-            datetime.datetime(2026, 7, 6, 10, 7),
+            datetime.datetime(future_monday.year, future_monday.month, future_monday.day, 10, 7),
             timezone.get_current_timezone()
         )
         form_invalid = AppointmentForm(
@@ -4029,7 +4043,7 @@ class SmartSchedulingTests(TestCase):
 
         # Hora válida: 10:15
         valid_time = timezone.make_aware(
-            datetime.datetime(2026, 7, 6, 10, 15),
+            datetime.datetime(future_monday.year, future_monday.month, future_monday.day, 10, 15),
             timezone.get_current_timezone()
         )
         form_valid = AppointmentForm(
@@ -4139,9 +4153,16 @@ class DynamicSlotDurationTests(TestCase):
             end_time=datetime.time(20, 0),
         )
 
+        # Find a future Monday relative to today (day_of_week=0)
+        today = timezone.localtime(timezone.now()).date()
+        days_until_monday = (0 - today.weekday()) % 7
+        if days_until_monday == 0:
+            days_until_monday = 7
+        future_monday = today + datetime.timedelta(days=days_until_monday)
+
         # Con slot_duration=30, 10:15 es inválido
         invalid_time = timezone.make_aware(
-            datetime.datetime(2026, 7, 6, 10, 15),
+            datetime.datetime(future_monday.year, future_monday.month, future_monday.day, 10, 15),
             timezone.get_current_timezone()
         )
         form_invalid = AppointmentForm(
@@ -4157,7 +4178,7 @@ class DynamicSlotDurationTests(TestCase):
 
         # Con slot_duration=30, 10:30 es válido
         valid_time = timezone.make_aware(
-            datetime.datetime(2026, 7, 6, 10, 30),
+            datetime.datetime(future_monday.year, future_monday.month, future_monday.day, 10, 30),
             timezone.get_current_timezone()
         )
         form_valid = AppointmentForm(
@@ -4169,6 +4190,211 @@ class DynamicSlotDurationTests(TestCase):
             hairdresser=self.hairdresser,
         )
         self.assertTrue(form_valid.is_valid())
+
+
+class PauseTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        from core.models import Hairdresser, Service, WorkingHours
+        import datetime
+        
+        User = get_user_model()
+        self.owner = User.objects.create_user(
+            username="owner_pause_test",
+            password="password123",
+            is_owner=True
+        )
+        self.hairdresser = Hairdresser.objects.create(
+            owner=self.owner,
+            name="Salon Pause Test",
+            address="Street 1"
+        )
+        self.service = Service.objects.create(
+            hairdresser=self.hairdresser,
+            name="Corte",
+            price=100.00,
+            duration_minutes=30
+        )
+        # Horario de atención: lunes todo el día
+        WorkingHours.objects.create(
+            hairdresser=self.hairdresser,
+            day_of_week=0,  # Lunes
+            start_time=datetime.time(8, 0),
+            end_time=datetime.time(20, 0),
+        )
+        self.client_user = User.objects.create_user(
+            username="client_pause_test",
+            password="password123",
+            is_owner=False
+        )
+
+    def test_add_schedule_pause_creates_pause(self):
+        from core.utils import add_schedule_pause
+        from core.models import Pause
+        from django.utils import timezone
+        
+        initial_count = Pause.objects.filter(hairdresser=self.hairdresser).count()
+        add_schedule_pause(self.hairdresser, 30)
+        
+        self.assertEqual(Pause.objects.filter(hairdresser=self.hairdresser).count(), initial_count + 1)
+        pause = Pause.objects.filter(hairdresser=self.hairdresser).last()
+        self.assertIsNotNone(pause)
+        self.assertAlmostEqual(
+            (pause.end_time - pause.start_time).total_seconds() / 60,
+            30.0,
+            places=1
+        )
+
+    def test_appointment_form_validation_blocks_overlap(self):
+        from core.forms import AppointmentForm
+        from core.models import Pause
+        from django.utils import timezone
+        import datetime
+
+        # Find future Monday
+        today = timezone.localtime(timezone.now()).date()
+        days_until_monday = (0 - today.weekday()) % 7
+        if days_until_monday == 0:
+            days_until_monday = 7
+        future_monday = today + datetime.timedelta(days=days_until_monday)
+
+        pause_start = timezone.make_aware(
+            datetime.datetime(future_monday.year, future_monday.month, future_monday.day, 10, 0),
+            timezone.get_current_timezone()
+        )
+        pause_end = pause_start + datetime.timedelta(minutes=30)
+        
+        Pause.objects.create(
+            hairdresser=self.hairdresser,
+            start_time=pause_start,
+            end_time=pause_end
+        )
+        
+        # Test exact overlap
+        form_invalid = AppointmentForm(
+            data={
+                "service": self.service.pk,
+                "start_time": pause_start.isoformat(),
+                "payment_method": "CASH",
+            },
+            hairdresser=self.hairdresser,
+        )
+        self.assertFalse(form_invalid.is_valid())
+        self.assertIn("Este horario no está disponible por el momento.", form_invalid.errors["__all__"][0])
+
+    def test_walk_in_form_validation_blocks_overlap(self):
+        from core.forms import WalkInAppointmentForm
+        from core.models import Pause
+        from django.utils import timezone
+        import datetime
+
+        # Find future Monday
+        today = timezone.localtime(timezone.now()).date()
+        days_until_monday = (0 - today.weekday()) % 7
+        if days_until_monday == 0:
+            days_until_monday = 7
+        future_monday = today + datetime.timedelta(days=days_until_monday)
+
+        pause_start = timezone.make_aware(
+            datetime.datetime(future_monday.year, future_monday.month, future_monday.day, 14, 0),
+            timezone.get_current_timezone()
+        )
+        pause_end = pause_start + datetime.timedelta(minutes=30)
+        
+        Pause.objects.create(
+            hairdresser=self.hairdresser,
+            start_time=pause_start,
+            end_time=pause_end
+        )
+        
+        form_invalid = WalkInAppointmentForm(
+            data={
+                "service": self.service.pk,
+                "client_name": "Test Client",
+                "date": future_monday.isoformat(),
+                "start_time_only": "14:15",
+            },
+            hairdresser=self.hairdresser,
+        )
+        self.assertFalse(form_invalid.is_valid())
+        self.assertIn("Este horario no está disponible por el momento.", form_invalid.errors["__all__"][0])
+
+    def test_terminate_active_pause_early_view(self):
+        from core.models import Pause, Appointment, EarlyStartOffer
+        from django.urls import reverse
+        from django.test import Client
+        from django.utils import timezone
+        import datetime
+        from unittest.mock import patch
+
+        client = Client()
+        client.login(username="owner_pause_test", password="password123")
+        
+        now = timezone.now().replace(microsecond=0)
+        
+        # Crear un turno futuro para hoy para verificar que se genere la oferta de adelanto
+        next_app = Appointment.objects.create(
+            client=self.client_user,
+            service=self.service,
+            start_time=now + datetime.timedelta(minutes=45),
+            end_time=now + datetime.timedelta(minutes=75),
+            status="CONFIRMED"
+        )
+        
+        # Pausa activa (comienza hace 5 minutos, termina en 15 minutos)
+        # Quedan 15 minutos de pausa que se liberarán
+        pause = Pause.objects.create(
+            hairdresser=self.hairdresser,
+            start_time=now - datetime.timedelta(minutes=5),
+            end_time=now + datetime.timedelta(minutes=15)
+        )
+        
+        url = reverse("delete_pause", args=[pause.pk])
+        
+        with patch("core.utils.send_push_notification") as mock_push, \
+             patch("core.utils.send_html_email") as mock_email:
+            response = client.post(url)
+            
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+        self.assertIn("Se ofreció adelantar el horario al próximo cliente", data["message"])
+        
+        # Debe seguir existiendo la pausa pero con end_time acotado a 'now'
+        updated_pause = Pause.objects.get(pk=pause.pk)
+        self.assertAlmostEqual(updated_pause.end_time.timestamp(), now.timestamp(), delta=5)
+        
+        # Debería haberse creado un EarlyStartOffer para el próximo turno
+        offer = EarlyStartOffer.objects.filter(appointment=next_app).first()
+        self.assertIsNotNone(offer)
+        self.assertFalse(offer.accepted)
+        self.assertEqual(offer.minutes_available, 15)
+
+    def test_delete_future_pause_view(self):
+        from core.models import Pause
+        from django.urls import reverse
+        from django.test import Client
+        from django.utils import timezone
+        import datetime
+
+        client = Client()
+        client.login(username="owner_pause_test", password="password123")
+        
+        # Pausa futura (comienza en 1 hora)
+        pause = Pause.objects.create(
+            hairdresser=self.hairdresser,
+            start_time=timezone.now() + datetime.timedelta(hours=1),
+            end_time=timezone.now() + datetime.timedelta(hours=1, minutes=30)
+        )
+        
+        url = reverse("delete_pause", args=[pause.pk])
+        response = client.post(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "success")
+        
+        # Al ser futura, debe eliminarse por completo
+        self.assertFalse(Pause.objects.filter(pk=pause.pk).exists())
+
 
 
 

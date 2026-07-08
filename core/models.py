@@ -896,3 +896,25 @@ class EarlyStartOffer(models.Model):
         return f"Oferta para Turno #{self.appointment_id} - {self.minutes_available} min"
 
 
+class Pause(models.Model):
+    """
+    Representa una pausa en la agenda de un peluquero.
+    Impide que se realicen reservas durante esta franja horaria.
+    """
+    hairdresser = models.ForeignKey(
+        Hairdresser, on_delete=models.CASCADE, related_name="pauses"
+    )
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Pausa"
+        verbose_name_plural = "Pausas"
+        ordering = ["start_time"]
+
+    def __str__(self):
+        return f"Pausa en {self.hairdresser.name} de {self.start_time.strftime('%H:%M')} a {self.end_time.strftime('%H:%M')}"
+
+
+

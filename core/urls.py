@@ -24,6 +24,7 @@ from .views import (
     WorkstationView,
     RegisterWalkInView,
     AddPauseView,
+    delete_pause,
     update_appointment_status,
     cancel_appointment_client,
     adjust_appointment_time,
@@ -71,6 +72,11 @@ urlpatterns = [
         "workstation/add-pause/",
         AddPauseView.as_view(),
         name="add_pause",
+    ),
+    path(
+        "workstation/pause/<int:pk>/delete/",
+        delete_pause,
+        name="delete_pause",
     ),
     path(
         "workstation/appointment/<int:pk>/update-status/",
